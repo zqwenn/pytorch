@@ -883,6 +883,7 @@ class Graph:
         self._codegen = CodeGen()
         self._co_fields : Dict[str, Any] = {}
         self._find_nodes_lookup_table = _FindNodesLookupTable()
+        self._meta = {}
 
     @property
     def owning_module(self):

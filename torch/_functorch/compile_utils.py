@@ -46,7 +46,7 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
 
     from torch._inductor.pattern_matcher import (
         compute_mutation_region_ids,
-        same_mutation_regions,
+        safe_to_operate,
     )
 
     compute_mutation_region_ids(fx_g)  # type: ignore[arg-type]
@@ -100,7 +100,7 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
             overwrite_due_to_mutation = False
             if hash_val_in_hash_env and token_map[hash_val] == token:
                 duplicate_n_prev = hash_env[hash_val]
-                if same_mutation_regions(n, duplicate_n_prev):
+                if safe_to_operate(fx_g, [n, duplicate_n_prev]):
                     env[n] = duplicate_n_prev
                     continue
                 else:

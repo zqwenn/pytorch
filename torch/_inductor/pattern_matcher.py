@@ -48,6 +48,7 @@ import os
 import re
 import textwrap
 import typing
+import weakref
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
@@ -79,6 +80,7 @@ import torch.utils._pytree as pytree
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.utils import counters
 from torch._inductor.config import trace as trace_config
+from torch._inductor.fx_utils import get_node_storage, get_node_storage_obj
 from torch._prims_common import is_integer_dtype
 from torch.fx.experimental.proxy_tensor import make_fx, maybe_disable_fake_tensor_mode
 from torch.fx.experimental.symbolic_shapes import guard_size_oblivious
@@ -1604,7 +1606,71 @@ def is_start_of_fx_graph(graph: torch.fx.Graph, node: torch.fx.Node) -> bool:
 _mutation_op_re = re.compile(r"(?<!_)(_$|_[.]|(\b|_)(set|enter|exit|seed)(\b|_))(?!_)")
 
 
-def is_mutation_op(node: torch.fx.Node) -> bool:
+def safe_to_operate(graph, nodes):
+    """Is it safe to do graph transforms on nodes?
+    
+    The provided graph may not be completely functional. This helper function
+    determines e.g. if we are allowed to reorder nodes or pattern match on them
+    in the presence of mutable operations.
+
+    There are two main types of mutable operations that can introduce
+    constraints on the nodes we can operate on:
+    - mutable operations
+    - auto_functionalized mutable operations
+
+    All of the metadata for this function gets computed in
+    `compute_node_constraints`
+    """
+    # New nodes may have been added to the graph so we update all of them.
+    # NB: we assume the changes do not include the addition of
+    # any new barrier mutation or auto_functionalized nodes
+    # https://github.com/pytorch/pytorch/issues/132932
+    for node in nodes:
+        graph.meta["node_constraints"].update(node)
+
+    # [mutable operations]
+    # We treat all mutable operations in the graph as "barriers".
+    # that is, a node before a mutable operation (like set_) is not allowed to
+    # interact with after the mutable operation.
+    #
+    # Each node in the graph gets tagged with a "mutation_region_id"
+    # that is equal to the number of mutable ops before the node.
+    metas = [node.meta for node in nodes]
+    if len(set(meta['mutation_region_id'] for meta in metas)) > 1:
+        return False
+
+    # [auto_functionalized mutable operations]
+    # These are technically functional operations, but we still impose
+    # constraints to make it so that the reinplacing pass is able
+    # to reinplace them back to their mutable variants.
+    #
+    # For auto_functionalized nodes: all inputs that need reinplacing
+    # (and their views) are not allowed to interact with nodes that
+    # are after the auto_functionalized node.
+    #
+    # Each node in the graph is tagged with a "auto_functionalized_region_id"
+    # that is equal to the number of auto_functionalized nodes before the node.
+    #
+    # nodes that need reinplacing (and their views) are tagged with
+    # the auto_functionalized_region_id that they must be in or before.
+    key = 'must_be_in_or_before_auto_functionalized_region_id'
+    min_region_id_constraints = [meta[key] for meta in metas if key in meta]
+    if len(min_region_id_constraints) == 0:
+        return True
+    min_region_id_constraint = min(min_region_id_constraints)
+    region_ids = [meta['auto_functionalized_region_id'] for meta in metas]
+    for region_id in region_ids:
+        if region_id > min_region_id_constraint:
+            return False
+    return True
+
+
+def compute_node_constraints(graph):
+    graph._meta["node_constraints"] = NodeConstraints(graph)
+    graph._meta["node_constraints"].compute_node_constraints()
+
+
+def is_barrier_mutation_op(node: torch.fx.Node) -> bool:
     if node.op == "call_function":
         if _mutation_op_re.search(node.target.__name__):  # type: ignore[union-attr]
             return True
@@ -1614,35 +1680,76 @@ def is_mutation_op(node: torch.fx.Node) -> bool:
     return node.kwargs.get("out") is not None
 
 
-def same_mutation_regions(a: torch.fx.Node, b: torch.fx.Node) -> bool:
-    assert "mutation_region_id" in a.meta
-    assert "mutation_region_id" in b.meta
-    return a.meta["mutation_region_id"] == b.meta["mutation_region_id"]
+def should_compute_node_constraints(graph: torch.fx.GraphModule) -> bool:
+    return "node_constraints" not in graph.meta
 
 
-def get_mutation_region_id(graph: torch.fx.Graph, node: torch.fx.Node) -> int:
-    n = node
-    while "mutation_region_id" not in n.meta and not is_start_of_fx_graph(graph, n):
-        n = n.prev
-    mutation_region_id = n.meta.get("mutation_region_id", 0)
-    while n is not node:
-        n = n.next
-        if is_mutation_op(n):
-            mutation_region_id += 1
-        n.meta["mutation_region_id"] = mutation_region_id
-    return mutation_region_id
+class NodeConstraints:
+    def __init__(self, graph):
+        self.graph = weakref.proxy(graph)
+        # Maps storage to a list of nodes that have the same storage.
+        self.storage_to_nodes = weakref.WeakKeyDictionary()
 
+    def compute_node_constraints(self):
+        current_barrier_mutation_region_id = 0
+        current_auto_functionalized_region_id = 0
+        for node in self.graph.nodes:
+            storage = get_node_storage_obj(node)
+            if storage is not None:
+                if storage not in self.storage_to_nodes:
+                    self.storage_to_nodes[storage] = []
+                self.storage_to_nodes[storage].append(weakref.ref(node))
 
-def should_compute_mutation_region_ids(graph: torch.fx.GraphModule) -> bool:
-    return "mutation_region_id" not in next(iter(graph.nodes)).meta
+        for node in self.graph.nodes:
+            current_barrier_mutation_region_id, current_auto_functionalized_region_id = self.process(node, current_barrier_mutation_region_id, current_auto_functionalized_region_id)
 
+    def process(self, node, current_barrier_mutation_region_id, current_auto_functionalized_region_id):
+        if is_barrier_mutation_op(node):
+            current_barrier_mutation_region_id += 1
 
-def compute_mutation_region_ids(graph: torch.fx.GraphModule) -> None:
-    mutation_region_id = 0
-    for nd in graph.nodes:
-        if is_mutation_op(nd):
-            mutation_region_id += 1
-        nd.meta["mutation_region_id"] = mutation_region_id
+        node.meta["auto_functionalized_region_id"] = current_auto_functionalized_region_id
+        if node.target is torch.ops.higher_order.auto_functionalized:
+
+            # Get all inputs to the auto_functionalized that are reinplacing candidates.
+            mutable_op = node.args[0]
+            mutable_args_names = torch._higher_order_ops.auto_functionalize.get_mutable_arg_names(mutable_op)
+            mutable_args = [node.kwargs[name] for name in mutable_args_names]
+            mutable_storages = set(get_node_storage_obj(arg) for arg in mutable_args)
+
+            # Get all nodes that are aliases of all reinplacing candidates
+            aliased_nodes = []
+            for storage in mutable_storages:
+                aliased_nodes.extend(self.storage_to_nodes[storage])
+            assert len(aliased_nodes) >= 1, "must at least alias self"
+
+            for ref in aliased_nodes:
+                actual_node = ref()
+                key = "must_be_in_or_before_auto_functionalized_region_id"
+                if actual_node is not None and key not in actual_node.meta:
+                    actual_node.meta[key] = current_auto_functionalized_region_id
+            
+            current_auto_functionalized_region_id += 1
+        
+        node.meta["mutation_region_id"] = current_barrier_mutation_region_id
+        return current_barrier_mutation_region_id, current_auto_functionalized_region_id
+
+    def update(self, node):
+        """If a node has no constraints metadata, compute some"""
+        n = node
+        while "mutation_region_id" not in n.meta and not is_start_of_fx_graph(graph, n):
+            storage = get_node_storage_obj(n)
+            if storage is not None:
+                if storage not in self.storage_to_nodes:
+                    self.storage_to_nodes[storage] = []
+                self.storage_to_nodes[storage].append(weakref.ref(n))
+            n = n.prev
+
+        current_barrier_mutation_region_id = n.meta['mutation_region_id']
+        current_auto_functionalized_region_id = n.meta['auto_functionalized_region_id']
+        
+        while n is not node:
+            n = n.next
+            current_barrier_mutation_region_id, current_auto_functionalized_region_id = self.process(node, current_barrier_mutation_region_id, current_auto_functionalized_region_id)
 
 
 class PatternMatcherPass:
@@ -1671,11 +1778,8 @@ class PatternMatcherPass:
             raise RuntimeError(
                 f"The input to PatternMatcherPass must be a GraphModule or a Graph, but got {type(gm)}"
             )
-        if should_compute_mutation_region_ids(graph):
-            compute_mutation_region_ids(graph)
-        get_mutation_region_id_partial = functools.partial(
-            get_mutation_region_id, graph
-        )
+        if should_compute_node_constraints(graph):
+            compute_node_constraints(graph)
         count = 0
         nodes = []
         has_call_module = False
@@ -1709,7 +1813,7 @@ class PatternMatcherPass:
                     # pattern match crosses mutation barrier - discard
                     if (
                         is_match(m)
-                        and len(set(map(get_mutation_region_id_partial, m.nodes))) != 1  # type: ignore[possibly-undefined]
+                        and not safe_to_operate(graph, m.nodes)
                     ):
                         continue
                     if os.environ.get("TORCHINDUCTOR_PATTERN_MATCH_DEBUG") == node.name:

@@ -31,7 +31,7 @@ from ..pattern_matcher import (
     CallFunctionVarArgs,
     filter_nodes,
     get_arg_value,
-    get_mutation_region_id,
+    safe_to_operate,
     Ignored,
     init_once_fakemode,
     KeywordArg,
@@ -163,8 +163,7 @@ def reorder_for_locality(graph: torch.fx.Graph):
             other_node.op == "call_function"
             and other_node.target != operator.getitem
             and all((n in seen_nodes) for n in other_node.users)
-            and get_mutation_region_id(graph, node)
-            == get_mutation_region_id(graph, other_node)
+            and safe_to_operate(graph, [node, other_node])
         ):
             # move node's producers right before it
             node.prepend(other_node)
