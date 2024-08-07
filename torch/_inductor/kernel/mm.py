@@ -441,10 +441,57 @@ def tuned_addmm(inp, mat1, mat2, *, alpha=1, beta=1, layout=None):
                     (inp_expanded, mat1, mat2), layout, alpha=alpha, beta=beta
                 ),
             )
-    try:
-        return autotune_select_algorithm(
-            "addmm", choices, [inp_expanded, mat1, mat2], layout
+
+    input_nodes = [inp_expanded, mat1, mat2]
+    name = "addmm"
+    if (
+        is_nonzero
+        and use_triton_template(layout)
+        and torch._inductor.config.run_autoheuristic(name)
+        and is_triton(mat1)
+    ):
+        always_included = []
+        if use_aten_gemm_kernels():
+            always_included.append("extern_bias_addmm")
+            always_included.append("extern_addmm")
+        num_choices_before_extra_configs = len(choices)
+        for config in extra_mm_configs(m, n, k):
+            mm_template.maybe_append_choice(
+                choices,
+                input_nodes=(inp_expanded, mat1, mat2),
+                layout=layout,
+                **mm_options(config, m, n, k, layout),
+                prefix_args=1,
+                epilogue_fn=addmm_epilogue(layout.dtype, alpha, beta),
+            )
+        # using AutoHeuristic for ranking
+        ah_choices = mm_autoheuristic(
+            mat1,
+            mat2,
+            m,
+            n,
+            k,
+            choices,
+            name,
+            input_nodes,
+            mm_operations(),
+            None,
+            top_k=10,
+            always_included=always_included,
         )
+        if not torch._inductor.config.collect_autoheuristic(name):
+            if ah_choices is not None and len(ah_choices) > 0:
+                # the order in which autoheuristic returns choices is not the same as
+                # as the order of choices, which affects things like epilogue fusion.
+                # once epilogue fusion benchmarks choices in sorted order, I think we can
+                # just use the order returned by autoheuristic
+                choices = [choice for choice in choices if choice in ah_choices]
+
+            else:
+                choices = choices[:num_choices_before_extra_configs]
+
+    try:
+        return autotune_select_algorithm(name, choices, input_nodes, layout)
     except NoValidChoicesError:
         if not inductor_config.autotune_fallback_to_aten:
             raise
@@ -556,7 +603,7 @@ def mm_autoheuristic(
         context.add_feature(
             "mat2_iscontig", mat2.layout.is_contiguous(), is_categorical=True
         )
-        if name == "mm":
+        if name == "mm" or name == "addmm":
             # for mixed_mm, we only consider fp16
             context_add_using_tf32(context, mat1.layout.dtype)
         return context
