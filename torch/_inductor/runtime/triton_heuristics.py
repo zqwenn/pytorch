@@ -33,6 +33,7 @@ from .runtime_utils import (
     ceildiv,
     conditional_product,
     create_bandwidth_info_str,
+    do_bench_cpu,
     do_bench_gpu,
     dynamo_timed,
     get_first_attr,
@@ -664,7 +665,10 @@ class CachingAutotuner(KernelInterface):
                 stream=stream,
             )
 
-        return do_bench_gpu(kernel_call, rep=40, fast_flush=True)
+        if device_interface.current_device().type == "cpu":
+            return do_bench_cpu(kernel_call)
+        else:
+            return do_bench_gpu(kernel_call, rep=40, fast_flush=True)
 
     def clone_args(self, *args, **kwargs) -> Tuple[List[Any], Dict[str, Any]]:
         from ..compile_fx import clone_preserve_strides
