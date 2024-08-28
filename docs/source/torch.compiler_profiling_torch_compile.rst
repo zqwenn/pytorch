@@ -24,12 +24,9 @@ Basics of using torch.profiler and viewing traces
     import torch
     from torchvision.models import resnet18
     
-    # user can switch between cuda and xpu
-    device = 'cuda' 
-    if device == 'xpu':
-        model = resnet18().xpu()
-    else:
-        model = resnet18().cuda()
+    # user can select device to use: 'cuda', 'xpu', etc.
+    device = 'cuda'
+    model = resnet18().to(device)
 
     inputs = [torch.randn((5, 3, 224, 224), device=device) for _ in range(10)]
 
