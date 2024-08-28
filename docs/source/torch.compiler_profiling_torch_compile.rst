@@ -102,10 +102,7 @@ See an example below:
 
     # user can switch between cuda and xpu
     device = 'cuda' 
-    if device == 'xpu':
-        model = resnet18().xpu()
-    else:
-        model = resnet18().cuda()
+    model = resnet18().to(device)
     inputs = [torch.randn((5, 3, 224, 224), device=device) for _ in range(10)]
 
     model_c = torch.compile(model)
