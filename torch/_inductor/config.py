@@ -946,6 +946,12 @@ class aot_inductor:
 
     package: bool = False
 
+    # Dictionary of metadata users might want to save to pass to the runtime.
+    metadata: Dict[str, str] = {}
+
+    # List of additional sources (filenames) to be packaged and built with AOTI
+    additional_sources: List[str] = []
+
 
 class cuda:
     # CUDA arch to use for CUDA template kernel compilation.
