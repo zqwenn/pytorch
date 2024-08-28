@@ -132,7 +132,7 @@ See an example below:
 .. figure:: _static/img/profiling_torch_compile/compilation_profiling.png
     :alt: A visualization in the chrome://trace viewer, showing dynamo and inductor compilation steps
 
-Here is a XPU trace and user could see similar high-level categories of dynamo compilation steps in the right most part :
+Here is a XPU trace and user could see similar high-level categories of dynamo compilation steps in the rightmost part :
 
 .. figure:: _static/img/profiling_torch_compile/compilation_profiling_xpu.png
     :alt: A visualization in the chrome://trace viewer, showing dynamo and inductor compilation steps
