@@ -191,10 +191,7 @@ See the synthetic example below for a demonstration:
             mod4 = self.mod4(mod3)
             return mod4
 
-    if device == 'xpu':
-        model = ModelWithBreaks().xpu()
-    else:
-        model = ModelWithBreaks().cuda()
+    model = ModelWithBreaks().to(device)
     inputs = [torch.randn((128, 128), device=device) for _ in range(10)]
 
     model_c = torch.compile(model)
