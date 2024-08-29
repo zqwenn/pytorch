@@ -6,6 +6,7 @@
 #include <torch/csrc/autograd/function.h>
 #include <torch/csrc/autograd/grad_mode.h>
 #include <torch/csrc/autograd/variable.h>
+#include <torch/csrc/dynamo/compiled_autograd.h>
 
 #include <ATen/Tensor.h>
 
@@ -275,6 +276,11 @@ void SavedVariable::register_hooks(
   }
   set_hooks_and_pack_data(std::move(hooks), data_);
   data_.reset();
+}
+
+void SavedVariable::compiled_args(
+    torch::dynamo::autograd::CompiledNodeArgs& args) const {
+  hooks_->compiled_args(args, *this);
 }
 
 const char* ERR_BACKWARD_TWICE =

@@ -5,6 +5,7 @@
 #include <torch/csrc/Export.h>
 #include <torch/csrc/autograd/python_variable.h>
 #include <torch/csrc/autograd/saved_variable_hooks.h>
+#include <torch/csrc/dynamo/compiled_autograd.h>
 #include <torch/csrc/python_headers.h>
 #include <torch/csrc/utils/pybind.h>
 
@@ -16,6 +17,9 @@ struct PySavedVariableHooks : public SavedVariableHooks {
   PySavedVariableHooks(py::function& pack_hook, py::function& unpack_hook);
   void call_pack_hook(const at::Tensor& tensor) override;
   at::Tensor call_unpack_hook() override;
+  void compiled_args(
+      torch::dynamo::autograd::CompiledNodeArgs& args,
+      const SavedVariable& sv) override;
   ~PySavedVariableHooks() override;
 
  private:

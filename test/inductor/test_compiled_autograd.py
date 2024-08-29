@@ -2480,7 +2480,6 @@ TORCH_LIBRARY(test_cudagraphs_cpu_scalar_used_in_cpp_custom_op, m) {
 
         self.assertEqual(sum(1 for e in unexpected_logs if e in logs.getvalue()), 0)
 
-    @unittest.expectedFailure
     def test_saved_tensor_unpack_hook_ordering(self):
         # not the correct behaviour, I'm just preventing this from changing silently
         def f(x, y):
@@ -2517,6 +2516,34 @@ TORCH_LIBRARY(test_cudagraphs_cpu_scalar_used_in_cpp_custom_op, m) {
             loss.backward()
             self.assertEqual(pack_count, 1)
             self.assertEqual(unpack_count, 1)
+
+    def test_compiled_unpack_hooks_exec_count(self):
+        def fn():
+            pack_count = 0
+            unpack_count = 0
+
+            def pack_hook(x):
+                nonlocal pack_count
+                pack_count += 1
+                return x
+
+            def unpack_hook(x):
+                nonlocal unpack_count
+                unpack_count += 1
+                return x
+
+            a = torch.ones(5, requires_grad=True)
+            b = torch.ones(5, requires_grad=True)
+            with torch.autograd.graph.saved_tensors_hooks(pack_hook, unpack_hook):
+                y = a * b * 2
+                y.sum().backward()
+
+            yield pack_count
+            yield unpack_count
+            yield a.grad
+            yield b.grad
+
+        self.check_output_and_recompiles(fn)
 
     def test_reentrant_checkpointing(self):
         def fn(x):

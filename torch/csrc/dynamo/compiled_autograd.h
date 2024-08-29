@@ -143,10 +143,9 @@ struct TensorArgs {
     return lookup(tensor, true);
   }
 
+  TensorArg& add(const SavedVariable& sv, PyObject* hook_input, size_t hook_id);
+
   TensorArg& add(const SavedVariable& sv, const std::shared_ptr<Node>& node) {
-    // TODO(jansel): Here we unpack the SavedVariable exactly once.  This might
-    // fire SavedTensor hooks.  In the future we should try to put saved tensor
-    // hooks into the graph.
     at::Tensor tensor = sv.unpack(node);
     TensorArg& arg = add(tensor);
     _saved_variables.emplace(&sv, &arg);
@@ -155,6 +154,9 @@ struct TensorArgs {
 
   // the concrete tensors that will get passed into the graph as inputs
   std::vector<at::Tensor> inputs;
+
+  // indexes of expected unpack hook call order
+  std::vector<uint32_t> expected_unpack_hook_calls;
 
  private:
   std::unordered_map<const c10::TensorImpl*, TensorArg> _args;
@@ -197,11 +199,14 @@ struct AutogradCompilerCall {
     return hooks.size() - 1;
   }
 
+  size_t emplace_hook_with_dedup(PyObject* fn);
+
   TensorArgs tensor_args;
   std::vector<SizeInput> all_size_inputs;
   LiftedIValueArgs lifted_ivalue_args;
   std::vector<int64_t> dyn_size_inputs;
   std::vector<c10::SafePyObject> hooks;
+  std::unordered_map<PyObject*, int> dedup_hook_lookup;
   NodeCalls node_calls;
   SizeInput::DynType default_dyn_type = SizeInput::STATIC;
 };
@@ -229,9 +234,27 @@ class CompiledNodeArgs {
   void collect(const at::Tensor& t) {
     collect(_compiler.tensor_args.add(t));
   }
+  void collect(
+      const SavedVariable& sv,
+      PyObject* unpack_hook,
+      PyObject* hook_input);
   void collect(const SavedVariable& sv, bool is_output) {
-    collect(
-        _compiler.tensor_args.add(sv, is_output ? _node_call.node : nullptr));
+    if (!sv.has_hooks()) {
+      // Note: SavedVariable missing hooks
+      // SavedVariables can be missing hooks if:
+      // - no default hooks were set e.g. no
+      // torch.autograd.graph.saved_tensors_hook ctx
+      // - sv is ignoring the hooks e.g. wrapped number
+      // In both cases, we can directly unpack the SavedVariable without side
+      // effects Otherwise, we need to lift the unpack hook by tricking
+      // SavedVariable into calling our fake hook
+      collect(
+          _compiler.tensor_args.add(sv, is_output ? _node_call.node : nullptr));
+      return;
+    }
+
+    // Otherwise, lift the unpack hook and the packed data
+    sv.compiled_args(*this);
   }
   void collect(const c10::SymInt& t) {
     _compiler.add_size_input(t);
@@ -470,6 +493,8 @@ class CompiledNodeArgs {
     return _compiler.emplace_hook(std::move(obj));
   }
 
+  size_t add_unpack_hook(PyObject* obj);
+
   void add_tensor_pre_hook(c10::SafePyObject&& obj, int index) {
     auto fn_id = _compiler.emplace_hook(std::move(obj));
     collect_size(fn_id);
@@ -595,14 +620,21 @@ class SwapSavedVariables {
     stashed_tensors.restore(&t);
   }
 
-  void before(SavedVariable& t) {
-    TensorArg& arg = compiler.tensor_args.lookup(t);
-    stashed_variables.save(&t, std::move(t));
+  void before(SavedVariable& sv) {
+    TensorArg& arg = compiler.tensor_args.lookup(sv);
+    // See Note: SavedVariable missing hooks
+    bool disable_hooks = !sv.has_hooks();
+    stashed_variables.save(&sv, std::move(sv));
     if (arg.defined()) {
-      bool prior = at::SavedTensorDefaultHooks::set_tracing(true);
       TORCH_INTERNAL_ASSERT(arg.proxy_tensor.defined());
-      t = SavedVariable(arg.proxy_tensor, false);
-      at::SavedTensorDefaultHooks::set_tracing(prior);
+      if (disable_hooks) {
+        bool prior = at::SavedTensorDefaultHooks::set_tracing(true);
+        TORCH_INTERNAL_ASSERT(prior == false);
+      }
+      sv = SavedVariable(arg.proxy_tensor, false);
+      if (disable_hooks) {
+        at::SavedTensorDefaultHooks::set_tracing(false);
+      }
     }
   }
   void after(SavedVariable& t) {

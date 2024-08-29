@@ -1,5 +1,6 @@
 #include <torch/csrc/dynamo/python_compiled_autograd.h>
 
+#include <torch/csrc/PyInterpreter.h>
 #include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/functions/accumulate_grad.h>
 #include <torch/csrc/autograd/python_function.h>
@@ -56,6 +57,14 @@ static PyObject* wrap_int_list(const std::vector<int64_t>& inputs) {
   PyObject* pyinput = PyTuple_New(static_cast<Py_ssize_t>(inputs.size()));
   for (const auto i : c10::irange(inputs.size())) {
     PyTuple_SET_ITEM(pyinput, i, PyLong_FromSsize_t(inputs[i]));
+  }
+  return pyinput;
+}
+
+static PyObject* wrap_uint_list(const std::vector<uint32_t>& inputs) {
+  PyObject* pyinput = PyTuple_New(static_cast<Py_ssize_t>(inputs.size()));
+  for (const auto i : c10::irange(inputs.size())) {
+    PyTuple_SET_ITEM(pyinput, i, THPUtils_packUInt32(inputs[i]));
   }
   return pyinput;
 }
@@ -160,6 +169,44 @@ struct VerboseLogger {
   // only log cache miss due to node key once
   bool logged_node_miss = false;
 };
+
+size_t CompiledNodeArgs::add_unpack_hook(PyObject* obj) {
+  return _compiler.emplace_hook_with_dedup(obj);
+}
+
+void CompiledNodeArgs::collect(
+    const SavedVariable& sv,
+    PyObject* unpack_hook,
+    PyObject* hook_input) {
+  TORCH_CHECK(
+      THPVariable_Check(hook_input),
+      "Saved tensor pack hooks returning non-tensors not supported yet for compiled autograd");
+  size_t hook_id = add_unpack_hook(unpack_hook);
+  collect(hook_id);
+  collect(_compiler.tensor_args.add(sv, hook_input, hook_id));
+}
+
+size_t AutogradCompilerCall::emplace_hook_with_dedup(PyObject* fn) {
+  if (auto it = dedup_hook_lookup.find(fn); it != dedup_hook_lookup.end()) {
+    return it->second;
+  }
+
+  auto obj = c10::SafePyObject(fn, getPyInterpreter());
+  size_t idx = emplace_hook(std::move(obj));
+  dedup_hook_lookup.emplace(fn, idx);
+  return idx;
+}
+
+TensorArg& TensorArgs::add(
+    const SavedVariable& sv,
+    PyObject* hook_input,
+    size_t hook_id) {
+  auto hook_input_tensor = THPVariable_Unpack(hook_input);
+  TensorArg& arg = add(hook_input_tensor);
+  expected_unpack_hook_calls.emplace_back(hook_id);
+  _saved_variables.emplace(&sv, &arg);
+  return arg;
+}
 
 struct CacheNode {
   // A node in the shadow graph, we follow next edges until we reach the end of
@@ -422,6 +469,7 @@ static TraceState call_begin_capture(
       pyinput.get(),
       pysizeinput.get(),
       pyivalueargsinput.get(),
+      wrap_uint_list(compiler_call.tensor_args.expected_unpack_hook_calls),
       nullptr)));
 
   PyObject *fake_inputs{nullptr}, *fake_sizes{nullptr},
