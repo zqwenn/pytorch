@@ -60,10 +60,12 @@ set(TORCH_PYTHON_INCLUDE_DIRECTORIES
     ${CMAKE_BINARY_DIR}/aten/src
     ${CMAKE_BINARY_DIR}/caffe2/aten/src
     ${CMAKE_BINARY_DIR}/third_party
+    ${CMAKE_BINARY_DIR}/third_party/onnx
 
     ${TORCH_ROOT}/third_party/valgrind-headers
 
     ${TORCH_ROOT}/third_party/gloo
+    ${TORCH_ROOT}/third_party/onnx
     ${TORCH_ROOT}/third_party/flatbuffers/include
     ${TORCH_ROOT}/third_party/kineto/libkineto/include
     ${TORCH_ROOT}/third_party/cpp-httplib
@@ -84,7 +86,7 @@ set(TORCH_PYTHON_LINK_LIBRARIES
     nlohmann
     shm
     fmt::fmt-header-only
-    onnx_proto
+    onnx_library
     ATEN_CPU_FILES_GEN_LIB)
 
 if(USE_ASAN AND TARGET Sanitizer::address)
@@ -105,7 +107,7 @@ set(TORCH_PYTHON_LINK_FLAGS "")
 
 if(MSVC)
     string(APPEND TORCH_PYTHON_LINK_FLAGS " /NODEFAULTLIB:LIBCMT.LIB")
-    list(APPEND TORCH_PYTHON_LINK_LIBRARIES ${PYTHON_LIBRARIES} onnx_library)
+    list(APPEND TORCH_PYTHON_LINK_LIBRARIES ${PYTHON_LIBRARIES})
     if(NOT CMAKE_BUILD_TYPE MATCHES "Release")
       string(APPEND TORCH_PYTHON_LINK_FLAGS " /DEBUG:FULL")
     endif()
@@ -318,7 +320,6 @@ if(CAFFE2_USE_MKL AND BUILD_LIBTORCHLESS)
   target_link_libraries(torch_python PRIVATE caffe2::mkl)
 endif()
 
-add_dependencies(torch_python onnx_proto)
 # Avoid numpy for the DEPLOY build
 if(USE_NUMPY)
   target_link_libraries(torch_python PRIVATE Python::NumPy)
