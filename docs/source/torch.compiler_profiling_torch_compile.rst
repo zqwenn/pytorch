@@ -4,7 +4,7 @@ Profiling to understand torch.compile performance
 What to use torch.profiler for:
 -------------------------------
 
-torch.profiler is helpful for understanding the performance of your program at a kernel-level granularity - for example, it can show graph breaks and GPU, CPU or XPU utilization at the level of the program. The data provided by the profiler can often help users understand where to investigate further to understand model performance.
+torch.profiler is helpful for understanding the performance of your program at a kernel-level granularity - for example, it can show graph breaks and resources utilization at the level of the program. The data provided by the profiler can often help users understand where to investigate further to understand model performance.
 
 To understand kernel-level performance, other tools exist. NVIDIA's ncu tool, Intel® VTune™ Profiler or :ref:`inductor's profiling tools <torchinductor-gpu-profiling>` can be used.
 
