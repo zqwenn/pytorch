@@ -55,7 +55,7 @@ Here, we observe:
 * CompiledFunction and CompiledFunctionBackward events, which correspond to the dynamo-compiled regions.
 * CPU events at the top, and GPU events at the bottom.
 
-**Flows between CPU and GPU/XPU events**
+**Flows between CPU and accelerator events**
 
 Every kernel on the GPU/XPU occurs after being launched by code running on the CPU. The profiler can draw connections (i.e. “flows”) between the GPU/XPU and CPU events to show which CPU event launched a GPU/XPU kernel. This is particularly helpful because, with a few exceptions, GPU/XPU kernels are launched asynchronously.
 
