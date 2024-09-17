@@ -102,7 +102,7 @@ See an example below:
     from torchvision.models import resnet18
 
     # user can switch between cuda and xpu
-    device = 'cuda' 
+    device = 'cuda'
     model = resnet18().to(device)
     inputs = [torch.randn((5, 3, 224, 224), device=device) for _ in range(10)]
 
@@ -165,7 +165,7 @@ See the synthetic example below for a demonstration:
     import torch
     import torch._dynamo
     # user can switch between cuda and xpu
-    device = 'cuda' 
+    device = 'cuda'
 
     class ModelWithBreaks(torch.nn.Module):
         def __init__(self):
