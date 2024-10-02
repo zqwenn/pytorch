@@ -25,7 +25,7 @@ Basics of using torch.profiler and viewing traces
 
     import torch
     from torchvision.models import resnet18
-    
+
     device = 'cuda'      # or 'cpu', 'xpu', etc.
     model = resnet18().to(device)
 
