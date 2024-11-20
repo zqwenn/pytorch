@@ -6,6 +6,7 @@ import dataclasses
 import functools
 import itertools
 import logging
+logging.basicConfig(level=logging.DEBUG) 
 import math
 import operator
 import os
@@ -179,16 +180,16 @@ class BaseSchedulerNode:
 
     def __init__(self, scheduler: Scheduler) -> None:
         self.scheduler: Scheduler = scheduler
-        self.debug_device_str: Callable[
-            [BaseSchedulerNode], List[str]
-        ] = lambda *args, **kwargs: []
+        self.debug_device_str: Callable[[BaseSchedulerNode], List[str]] = (
+            lambda *args, **kwargs: []
+        )
 
     def _init_from_node(self, node: ir.Operation) -> None:
         self.node: Optional[ir.Operation] = node
         self.ancestors: OrderedSet[str] = OrderedSet()
-        self.last_usage: OrderedSet[
-            str
-        ] = OrderedSet()  # buffers that won't be used after this kernel
+        self.last_usage: OrderedSet[str] = (
+            OrderedSet()
+        )  # buffers that won't be used after this kernel
         self.written = False
         self.outputs: List[SchedulerBuffer] = [
             SchedulerBuffer(
@@ -478,9 +479,9 @@ class BaseSchedulerNode:
                             V.kernel.mutations.add(input_buf.get_name())
                             V.kernel.mutations.add(buf.get_name())
 
-                        V.kernel.inplace_update_buffers[
-                            buf.get_name()
-                        ] = input_buf.get_name()
+                        V.kernel.inplace_update_buffers[buf.get_name()] = (
+                            input_buf.get_name()
+                        )
                         break
 
     def codegen_originating_info(
@@ -608,15 +609,21 @@ class BaseSchedulerNode:
                     users = self.scheduler.name_to_buf[buf.get_name()].users
                     tot = 0
                     for user in users:
-                        assert isinstance(user.node, BaseSchedulerNode)
-                        if isinstance(user.node.node, MultiOutput):
-                            for sched_buf in user.node.get_outputs():
-                                tot += get_buf_bytes(sched_buf.node)
-                        else:
-                            # Buf is a MultiOutputLayout but not all of its
-                            # users are MultiOutputs...
-                            # TODO: Figure out what's going on
-                            return 0
+                        assert isinstance(user.node, (BaseSchedulerNode, OutputNode))
+                        if isinstance(user.node, BaseSchedulerNode):
+                            if isinstance(user.node.node, MultiOutput):
+                                for sched_buf in user.node.get_outputs():
+                                    tot += get_buf_bytes(sched_buf.node)
+                            else:
+                                # Buf is a MultiOutputLayout but not all of its
+                                # users are MultiOutputs...
+                                # TODO: Figure out what's going on
+                                return 0
+                        elif isinstance(user.node, OutputNode):
+                            # NOTE: a MultiOutputLayout can contain symbol, which is represented
+                            # as ShapeAsConstantBuffer instead of MultiOutput.
+                            # We ignore the buf_bytes caused by this kind of dependency.
+                            tot += 0
                     return tot
                 elif isinstance(buf.layout, ir.NoneLayout):
                     return sum(
@@ -2038,6 +2045,7 @@ class Scheduler:
             unbacked_symbol_defs = sorted(
                 node.node.get_unbacked_symbol_defs(), key=lambda x: x.name
             )
+            print("haha", node, unbacked_symbol_defs)
             for s in unbacked_symbol_defs:
                 assert isinstance(s, sympy.Symbol)
                 # Pick the first definer as canonical.  There may be multiple
@@ -2101,9 +2109,9 @@ class Scheduler:
                 for alt_name in buf.get_mutations():
                     self.mutation_renames[rename(alt_name)] = buf.get_name()
                     self.mutation_renames[alt_name] = buf.get_name()
-                    self.mutation_real_name[
-                        buf.get_name()
-                    ] = self.mutation_real_name.get(alt_name, alt_name)
+                    self.mutation_real_name[buf.get_name()] = (
+                        self.mutation_real_name.get(alt_name, alt_name)
+                    )
 
         # make sure outputs aren't dead-code-eliminated
         for buf_name in V.graph.get_output_names():
@@ -2894,9 +2902,9 @@ class Scheduler:
             rhs_dep = node2_name2dep[buf_name]
 
             if lhs_dep.get_numel() != rhs_dep.get_numel():
-                reasons[
-                    buf_name
-                ] = f"different numel: {lhs_dep.get_numel()} v.s. {rhs_dep.get_numel()}"
+                reasons[buf_name] = (
+                    f"different numel: {lhs_dep.get_numel()} v.s. {rhs_dep.get_numel()}"
+                )
                 continue
 
             # same numel but different MemoryDep.size. Should be broadcasting
@@ -2905,9 +2913,9 @@ class Scheduler:
                 continue
 
             if not isinstance(lhs_dep, MemoryDep) or not isinstance(rhs_dep, MemoryDep):
-                reasons[
-                    buf_name
-                ] = f"not MemoryDep: {type(lhs_dep)} v.s. {type(rhs_dep)}"
+                reasons[buf_name] = (
+                    f"not MemoryDep: {type(lhs_dep)} v.s. {type(rhs_dep)}"
+                )
                 continue
 
             lhs_off = lhs_dep.get_offset()
@@ -2927,9 +2935,9 @@ class Scheduler:
                 continue
 
             # Add more rules here
-            reasons[
-                buf_name
-            ] = f"Unknown reason: {lhs_dep} v.s. {rhs_dep}. Layout: {buf.layout}"
+            reasons[buf_name] = (
+                f"Unknown reason: {lhs_dep} v.s. {rhs_dep}. Layout: {buf.layout}"
+            )
 
         return str(reasons)
 
