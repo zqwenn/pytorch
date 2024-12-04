@@ -60,7 +60,7 @@ Here, we observe:
 
 Every kernel on the accelerator occurs after being launched by code running on the CPU. The profiler can draw connections (i.e. “flows”) between the accelerator and CPU events to show which CPU event launched a accelerator kernel. This is particularly helpful because, with a few exceptions, accelerator kernels are launched asynchronously.
 
-To view a flow connection, click on a GPU and click “ac2g”:
+To view a flow connection, click on a GPU kernel and click “ac2g”:
 
 .. figure:: _static/img/profiling_torch_compile/ac2g.png
     :alt: Visualization in the chrome://trace viewer, showing an async flow between a kernel and its launching location.
