@@ -65,14 +65,7 @@ To view a flow connection, click on a GPU kernel and click “ac2g”:
 .. figure:: _static/img/profiling_torch_compile/ac2g.png
     :alt: Visualization in the chrome://trace viewer, showing an async flow between a kernel and its launching location.
 
-
-Here is a XPU flow connection:
-
-.. figure:: _static/img/profiling_torch_compile/ac2g_xpu.png
-    :alt: Visualization in the chrome://trace viewer, showing an async flow between a kernel and its launching location.
-
 Alternatively, turn on *all* flows with the “Flow events” dropdown at the top.
-
 
 Working around CUDA Graph profiling issues
 ------------------------------------------
@@ -133,10 +126,6 @@ See an example below:
 .. figure:: _static/img/profiling_torch_compile/compilation_profiling.png
     :alt: A visualization in the chrome://trace viewer, showing dynamo and inductor compilation steps
 
-Here is a XPU trace and user could see similar high-level categories of dynamo compilation steps in the rightmost part :
-
-.. figure:: _static/img/profiling_torch_compile/compilation_profiling_xpu.png
-    :alt: A visualization in the chrome://trace viewer, showing dynamo and inductor compilation steps
 
 Note a few things:
 
@@ -214,10 +203,6 @@ See the synthetic example below for a demonstration:
 .. figure:: _static/img/profiling_torch_compile/graph_breaks_with_torch_compiled_region.png
     :alt: Visualization in the chrome://trace viewer, showing nested Torch-Compiled Region events and multiple CompiledFunction events - indicating graph breaks.
 
-Here is a XPU trace and user could see similar nested Torch-Compiled Region events and multiple CompiledFunction events :
-
-.. figure:: _static/img/profiling_torch_compile/graph_breaks_with_torch_compiled_region_xpu.png
-    :alt: Visualization in the chrome://trace viewer, showing nested Torch-Compiled Region events and multiple CompiledFunction events - indicating graph breaks.
 
 Operator Kernels
 ----------------
@@ -231,10 +216,6 @@ When an operator is launched, we expect to see a few events:
 .. figure:: _static/img/profiling_torch_compile/kernel_launch_labeled.png
     :alt: Visualization in the chrome://trace viewer, showing the three types of events: CPU-side event, kernel launch, and GPU-side event
 
-Here is a XPU trace and user could see similar CPU and XPU events for XPU Kernel launch:
-
-.. figure:: _static/img/profiling_torch_compile/kernel_launch_labeled_xpu.png
-    :alt: Visualization in the chrome://trace viewer, showing the three types of events: CPU-side event, kernel launch, and GPU-side event
 
 **Inductor-generated Triton kernels:**
 1. The **CPU-side event** should appear as an event prefixed with "triton\_". The events currently have minimal information - the kernel name and a launch, but less information than typical aten kernel launches (which contain input shapes, types, etc.).
