@@ -58,7 +58,7 @@ Here, we observe:
 
 **Flows between CPU and accelerator events**
 
-Every kernel on the GPU/XPU occurs after being launched by code running on the CPU. The profiler can draw connections (i.e. “flows”) between the GPU/XPU and CPU events to show which CPU event launched a GPU/XPU kernel. This is particularly helpful because, with a few exceptions, GPU/XPU kernels are launched asynchronously.
+Every kernel on the accelerator occurs after being launched by code running on the CPU. The profiler can draw connections (i.e. “flows”) between the accelerator and CPU events to show which CPU event launched a accelerator kernel. This is particularly helpful because, with a few exceptions, accelerator kernels are launched asynchronously.
 
 To view a flow connection, click on a GPU and click “ac2g”:
 
