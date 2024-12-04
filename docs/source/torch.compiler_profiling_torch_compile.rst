@@ -203,7 +203,6 @@ See the synthetic example below for a demonstration:
 .. figure:: _static/img/profiling_torch_compile/graph_breaks_with_torch_compiled_region.png
     :alt: Visualization in the chrome://trace viewer, showing nested Torch-Compiled Region events and multiple CompiledFunction events - indicating graph breaks.
 
-
 Operator Kernels
 ----------------
 
@@ -215,7 +214,6 @@ When an operator is launched, we expect to see a few events:
 
 .. figure:: _static/img/profiling_torch_compile/kernel_launch_labeled.png
     :alt: Visualization in the chrome://trace viewer, showing the three types of events: CPU-side event, kernel launch, and GPU-side event
-
 
 **Inductor-generated Triton kernels:**
 1. The **CPU-side event** should appear as an event prefixed with "triton\_". The events currently have minimal information - the kernel name and a launch, but less information than typical aten kernel launches (which contain input shapes, types, etc.).
