@@ -161,7 +161,8 @@ void InputBuffer::add(
   std::optional<c10::Stream> opt_accumulate_stream = std::nullopt;
   const auto device_type = device_of(var).value().type();
   // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-  if (device_of(var)->is_cuda() || device_of(var)->is_privateuseone()) {
+  if (device_of(var)->is_cuda() || device_of(var)->is_xpu() ||
+      device_of(var)->is_privateuseone()) {
     const auto on_producer =
         opt_producer_stream && device_of(var) == opt_producer_stream->device();
     const auto on_consumer =
@@ -214,7 +215,7 @@ void InputBuffer::add(
       c10::OptionalStreamGuard stream_guard{opt_accumulate_stream};
       accumulate(buffer, pos, std::move(var));
     } else {
-      // (1) non-CUDA/privateuse1 variable
+      // (1) non-CUDA/XPU/privateuse1 variable
       //     Accumulation happens on variable's device
       c10::OptionalDeviceGuard device_guard{device_of(var)};
       accumulate(buffer, pos, std::move(var));
