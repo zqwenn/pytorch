@@ -44,13 +44,18 @@
 // to symbol clashes at link time if libtorch is included in a DLL and binary
 // that depends on the DLL. As a short term fix, we don't export the symbols.
 // In the long term, this will need to be addressed when Windows is supported.
-// #define AOTI_TORCH_EXPORT __declspec(dllexport)
-#define AOTI_TORCH_EXPORT
+#ifdef EXPORT_AOTI_FUNCTIONS
+#define AOTI_TORCH_EXPORT __declspec(dllexport)
+#else
+#define AOTI_TORCH_EXPORT __declspec(dllimport)
+#endif
 #else // !_WIN32
 #define AOTI_TORCH_EXPORT
 #endif // _WIN32
 #endif // __GNUC__
 
+// The following files are implemented in a header-only way and are guarded by
+// test/cpp/aoti_abi_check
 #include <c10/util/BFloat16.h>
 #include <c10/util/Half.h>
 #include <c10/util/complex.h>
@@ -94,6 +99,8 @@ using AOTITorchError = int32_t;
 // desired for perf reasons.)
 AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_cuda();
+AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_xpu();
+AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_privateuse1();
 
 AOTI_TORCH_EXPORT int32_t aoti_torch_dtype_float8_e5m2();
 AOTI_TORCH_EXPORT int32_t aoti_torch_dtype_float8_e4m3fn();
@@ -117,7 +124,18 @@ AOTI_TORCH_EXPORT int32_t aoti_torch_dtype_complex64();
 AOTI_TORCH_EXPORT int32_t aoti_torch_dtype_complex128();
 
 AOTI_TORCH_EXPORT int32_t aoti_torch_layout_strided();
+AOTI_TORCH_EXPORT int32_t aoti_torch_layout_sparse_coo();
+AOTI_TORCH_EXPORT int32_t aoti_torch_layout_sparse_csr();
+AOTI_TORCH_EXPORT int32_t aoti_torch_layout_sparse_csc();
+AOTI_TORCH_EXPORT int32_t aoti_torch_layout_sparse_bsr();
+AOTI_TORCH_EXPORT int32_t aoti_torch_layout_sparse_bsc();
 AOTI_TORCH_EXPORT int32_t aoti_torch_layout__mkldnn();
+AOTI_TORCH_EXPORT int32_t aoti_torch_layout_jagged();
+
+AOTI_TORCH_EXPORT int32_t aoti_torch_memory_format_contiguous_format();
+AOTI_TORCH_EXPORT int32_t aoti_torch_memory_format_channels_last();
+AOTI_TORCH_EXPORT int32_t aoti_torch_memory_format_channels_last_3d();
+AOTI_TORCH_EXPORT int32_t aoti_torch_memory_format_preserve_format();
 
 // Functions for converting a single-element tensor to a scalar value
 AOTI_TORCH_EXPORT AOTITorchError
@@ -493,6 +511,15 @@ aoti_torch_cpu_wrapped_fbgemm_pack_gemm_matrix_fp16(
 
 // This will soon be deprecated after ao_quantization is complete.
 // Please refrain from using this or increasing callsites.
+AOTI_TORCH_EXPORT AOTITorchError aoti_torch_cpu__wrapped_linear_prepack(
+    AtenTensorHandle weight,
+    AtenTensorHandle weight_scale,
+    AtenTensorHandle weight_zero_point,
+    AtenTensorHandle bias,
+    AtenTensorHandle* out);
+
+// This will soon be deprecated after ao_quantization is complete.
+// Please refrain from using this or increasing callsites.
 AOTI_TORCH_EXPORT AOTITorchError
 aoti_torch_cpu_wrapped_fbgemm_linear_fp16_weight(
     AtenTensorHandle input,
@@ -501,8 +528,23 @@ aoti_torch_cpu_wrapped_fbgemm_linear_fp16_weight(
     int64_t out_channel,
     AtenTensorHandle* out);
 
+// This will soon be deprecated after ao_quantization is complete.
+// Please refrain from using this or increasing callsites.
+AOTI_TORCH_EXPORT AOTITorchError
+aoti_torch_cpu__wrapped_quantized_linear_prepacked(
+    AtenTensorHandle input,
+    AtenTensorHandle input_scale,
+    AtenTensorHandle input_zero_point,
+    AtenTensorHandle weight,
+    AtenTensorHandle out_scale,
+    AtenTensorHandle out_zeropoint,
+    int64_t out_channel,
+    AtenTensorHandle* out);
+
 AOTI_TORCH_EXPORT AOTITorchError
 aoti_torch_nonzero(AtenTensorHandle self, AtenTensorHandle* out);
+
+AOTI_TORCH_EXPORT AOTITorchError aoti_torch_zero_(AtenTensorHandle self);
 
 AOTI_TORCH_EXPORT AOTITorchError aoti_torch_repeat_interleave_Tensor(
     AtenTensorHandle repeats,
@@ -551,6 +593,14 @@ AOTI_TORCH_EXPORT void aoti_torch_print_tensor_handle(
     AtenTensorHandle self,
     const char* msg);
 
+// When AOTI debug printer option is enabled, this function will be invoked to
+// torch pickle save the intermediate tensor for debugging purpose.
+AOTI_TORCH_EXPORT void aoti_torch_save_tensor_handle(
+    AtenTensorHandle self,
+    const char* tensor_name,
+    const char* launch_prefix,
+    const char* kernel_name);
+
 #ifdef USE_CUDA
 
 struct CUDAGuardOpaque;
@@ -582,7 +632,7 @@ aoti_torch_delete_cuda_stream_guard(CUDAStreamGuardHandle guard);
 AOTI_TORCH_EXPORT AOTITorchError
 aoti_torch_get_current_cuda_stream(int32_t device_index, void** ret_stream);
 
-#endif
+#endif // USE_CUDA
 
 // See `ProxyExecutor Design Note` in ir.py for more details
 AOTI_TORCH_EXPORT AOTITorchError aoti_torch_proxy_executor_call_function(

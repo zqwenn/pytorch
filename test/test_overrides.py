@@ -691,7 +691,10 @@ def generate_tensor_like_override_tests(cls):
                     f"Unsupported argument type {arg_type} for {arg_name} of function {func}"
                 )
 
-        if func in annotated_args:
+        # Special case; this doesn't have a schema but takes a list
+        if func is torch.sym_sum:
+            func_args.append([TensorLike(), TensorLike()])
+        elif func in annotated_args:
             for arg in annotated_args[func]:
                 # Guess valid input to aten function based on type of argument
                 t = arg["simple_type"]
@@ -1550,6 +1553,15 @@ class TestTorchFunctionMode(TestCase):
             finally:
                 del g
 
+    def test_disable_enable_torch_function_ctx(self):
+        class A(torch.Tensor):
+            pass
+
+        x = A(torch.randn(5))
+        with torch._C.DisableTorchFunction():
+            with torch.overrides._enable_torch_function():
+                self.assertIsInstance(torch.sum(x), A)
+
     def test_torch_function_all_disabled_api(self):
         from torch._C import _is_torch_function_all_disabled
 
@@ -1566,6 +1578,7 @@ class TestTorchFunctionMode(TestCase):
         with torch._C.DisableTorchFunctionSubclass():
             state = _is_torch_function_all_disabled()
             self.assertFalse(state)
+
 
     def test_subclass_hash(self):
         class DiagTensor(torch.Tensor):
@@ -1621,22 +1634,25 @@ class TestTorchFunctionMode(TestCase):
     def test_device_context_semantics(self):
         from torch._C import _len_torch_function_stack
         from torch.utils._device import DeviceContext
-        torch.set_default_device("cuda")
+        try:
+            torch.set_default_device("cuda")
 
-        def get_stack():
-            return [torch._C._get_function_stack_at(i) for i in range(_len_torch_function_stack())]
+            def get_stack():
+                return [torch._C._get_function_stack_at(i) for i in range(_len_torch_function_stack())]
 
-        base_mode = BaseTorchFunctionMode()
-        with base_mode:
-            torch.set_default_device("cpu")
-            x = torch.ones(2, 2)
+            base_mode = BaseTorchFunctionMode()
+            with base_mode:
+                torch.set_default_device("cpu")
+                x = torch.ones(2, 2)
+                stack = get_stack()
+                self.assertIsInstance(stack[0], DeviceContext)
+                self.assertEqual(stack[0].device, torch.device("cpu"))
+
             stack = get_stack()
             self.assertIsInstance(stack[0], DeviceContext)
             self.assertEqual(stack[0].device, torch.device("cpu"))
-
-        stack = get_stack()
-        self.assertIsInstance(stack[0], DeviceContext)
-        self.assertEqual(stack[0].device, torch.device("cpu"))
+        finally:
+            torch.set_default_device(None)
 
 
 
