@@ -10,7 +10,7 @@
 #include <c10/util/overflows.h>
 
 #include <cmath>
-#include <cstdint>
+#include <limits>
 #include <type_traits>
 
 namespace c10 {
@@ -50,7 +50,6 @@ struct maybe_bool<true, src_t> {
   }
 };
 
-// Note: deliberately ignores undefined behavior, consistent with NumPy.
 // PyTorch's type conversions can cause a variety of undefined behavior,
 // including float to integral overflow and signed to unsigned integer overflow.
 // Some of this undefined behavior is addressed below.
@@ -61,24 +60,39 @@ struct static_cast_with_inter_type {
     auto r = maybe_real<real, src_t>::apply(src);
     // Note: Converting from negative float values to unsigned integer types is
     // undefined behavior in C++, and current CPU and GPU compilers exhibit
-    // divergent behavior. Casting from negative float values to signed
-    // integer types and then to unsigned integer types is not undefined,
-    // however, so this cast improves the consistency of type conversions
+    // divergent behavior. A consistent behavior is forced by clip it into the
+    // result type. So this cast improves the consistency of type conversions
     // across compilers.
-    if constexpr (::std::is_unsigned_v<dest_t>) {
+    if constexpr (::std::is_integral_v<dest_t>) {
       if constexpr (::std::is_floating_point_v<decltype(r)>) {
+        constexpr auto max_int_value = std::numeric_limits<dest_t>::max();
 #if defined(__CUDA_ARCH__) || defined(__HIP_ARCH__)
-        if (static_cast<double>(r) <= __ll2double_rz(INT64_MIN)) {
+        if (static_cast<double>(r) >= __ll2double_rz(max_int_value)) {
 #else
-        if (static_cast<double>(r) <= ::std::rint(INT64_MIN)) {
+        if (C10_UNLIKELY(
+                static_cast<double>(r) >= ::std::rint(max_int_value))) {
 #endif
-          return static_cast<dest_t>(INT64_MIN);
+          return max_int_value;
+        }
+        if constexpr (::std::is_unsigned_v<dest_t>) {
+          if (r < 0) {
+            return 0;
+          }
+        } else {
+          constexpr auto min_int_value =
+              std::numeric_limits<std::make_signed_t<dest_t>>::min();
+#if defined(__CUDA_ARCH__) || defined(__HIP_ARCH__)
+          if (static_cast<double>(r) <= __ll2double_rz(min_int_value)) {
+#else
+          if (C10_UNLIKELY(
+                  static_cast<double>(r) <= ::std::rint(min_int_value))) {
+#endif
+            return min_int_value;
+          }
         }
       }
-      return static_cast<dest_t>(static_cast<int64_t>(r));
-    } else {
-      return static_cast<dest_t>(r);
     }
+    return static_cast<dest_t>(r);
   }
 };
 
