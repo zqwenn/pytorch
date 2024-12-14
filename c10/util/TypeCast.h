@@ -67,7 +67,11 @@ struct static_cast_with_inter_type {
     // across compilers.
     if constexpr (::std::is_unsigned_v<dest_t>) {
       if constexpr (::std::is_floating_point_v<decltype(r)>) {
+#if defined(__CUDA_ARCH__) || defined(__HIP_ARCH__)
+        if (static_cast<double>(r) <= __ll2double_rz(INT64_MIN)) {
+#else
         if (static_cast<double>(r) <= ::std::rint(INT64_MIN)) {
+#endif
           return static_cast<dest_t>(INT64_MIN);
         }
       }
