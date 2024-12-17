@@ -184,16 +184,15 @@ void InputBuffer::add(
       if (on_consumer && !on_producer) {
         // (3a)
         opt_accumulate_stream = opt_consumer_stream;
-        opt_sync_stream =
-            guard.getStreamFromGlobalPool(opt_consumer_stream->device());
+        opt_sync_stream = guard.getNewStream(opt_consumer_stream->device());
       } else if (on_producer && !on_consumer) {
         // (4a)
         opt_accumulate_stream =
-            guard.getStreamFromGlobalPool(opt_producer_stream->device());
+            guard.getNewStream(opt_producer_stream->device());
         opt_sync_stream = opt_producer_stream;
       } else {
         // (5)
-        opt_accumulate_stream = guard.getStreamFromGlobalPool(*device);
+        opt_accumulate_stream = guard.getNewStream(*device);
       }
       if (opt_sync_stream && (opt_accumulate_stream != opt_sync_stream)) {
         // (3b), (4b)
