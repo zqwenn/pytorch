@@ -368,6 +368,7 @@ class GroupedInductorBenchmarker(InductorBenchmarker):
         memory_warmup_iters: int = 100,
         benchmark_iters: int = 100,
         max_benchmark_duration: int = 25,
+        ranking: bool = False,
         **kwargs: Any,
     ) -> List[float]:
         """Benchmark many GPU callables using a custom benchmarking implementation.
@@ -418,6 +419,10 @@ class GroupedInductorBenchmarker(InductorBenchmarker):
         estimated_timings = self.get_interleaved_event_pairs_min_timing(
             interleaved_event_pairs
         )
+
+        if ranking:
+            del buffer
+            return estimated_timings
 
         # adjust `benchmark_iters` to fit in the maximum benchmarking duration, we're
         # alloted `max_benchmark_duration` per-callable, so we can just take the average
