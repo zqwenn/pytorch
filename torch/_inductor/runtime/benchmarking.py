@@ -1,7 +1,7 @@
 import time
 from functools import cached_property, wraps
 from itertools import chain
-from statistics import median
+from statistics import mean, median
 from typing import Any, Callable, Dict, List, Tuple
 from typing_extensions import Concatenate, ParamSpec, Self, TypeVar
 
@@ -128,6 +128,15 @@ class Benchmarker:
     @time_and_count
     def benchmark_gpu(self: Self, *args: Any, **kwargs: Any) -> float:
         raise NotImplementedError
+
+    @maybe_time
+    @count
+    def benchmark_many_gpu(
+        self: Self, callables: List[Callable[[], Any]], *args: Any, **kwargs: Any
+    ) -> List[float]:
+        return [
+            self.benchmark_gpu(_callable, *args, **kwargs) for _callable in callables
+        ]
 
 
 class TritonBenchmarker(Benchmarker):
