@@ -697,6 +697,38 @@ WriteBpropResults(
   }
 }
 
+template <int ILP, typename scalar_t, typename accscalar_t, typename outscalar_t, template <typename, typename, typename> class EpilogueWithMul>
+__global__ void
+cunn_SoftMaxForwardFast(outscalar_t *output, const scalar_t *input, int classes)
+{
+  extern __shared__ unsigned char smem[];
+  auto sdata = reinterpret_cast<accscalar_t*>(smem);
+
+  // each block handles a sample in the mini-batch
+  input += static_cast<int64_t>(blockIdx.x) * classes;
+  output += static_cast<int64_t>(blockIdx.x) * classes;
+
+  const int shift = ((uint64_t)input) % ALIGN_BYTES / sizeof(scalar_t);
+
+  // find the max
+  accscalar_t threadMax = ilpReduce<MaxFloat, ILP, scalar_t, accscalar_t>(
+    shift, input, classes, MaxFloat<scalar_t, accscalar_t>(), -at::numeric_limits<accscalar_t>::max());
+  accscalar_t max_k = blockReduceWarp<Max, accscalar_t>(sdata, threadMax,
+    Max<accscalar_t>(), -at::numeric_limits<accscalar_t>::max());
+
+  // reduce all values
+  accscalar_t threadExp = ilpReduce<SumExpfFloat, ILP, scalar_t, accscalar_t>(
+    shift, input, classes, SumExpfFloat<scalar_t, accscalar_t>(max_k), static_cast<accscalar_t>(0));
+  accscalar_t sumAll = blockReduceWarpInverse<Add, accscalar_t>(sdata, threadExp,
+    Add<accscalar_t>(), static_cast<accscalar_t>(0));
+
+  EpilogueWithMul<scalar_t, accscalar_t, outscalar_t> epilogue(max_k, sumAll);
+
+  for (int offset = threadIdx.x; offset < classes; offset += blockDim.x) {
+    output[offset] = epilogue(input[offset]);
+  }
+}
+
 template <int ILP, typename scalar_t, typename accscalar_t, typename outscalar_t, template <typename, typename, typename> class Epilogue>
 __global__ void
 cunn_SoftMaxForward(outscalar_t *output, const scalar_t *input, int classes)
@@ -962,8 +994,13 @@ Tensor host_softmax(const Tensor & input_, const int64_t dim_, const bool half_t
             if constexpr (use_fast_softmax) {
               dim3 block(512);
               size_t smem_reduction_sz = block.x / C10_WARP_SIZE * sizeof(accscalar_t);
-              cunn_SoftMaxForwardGmem<ILP, scalar_t, accscalar_t, scalar_t, EpilogueWithMul>
-                <<<grid, block, smem_reduction_sz, stream>>>(output_ptr, input_ptr, dim_size);
+              if (dim_size % ILP == 0) {
+                cunn_SoftMaxForwardGmem<ILP, scalar_t, accscalar_t, scalar_t, EpilogueWithMul>
+                    <<<grid, block, smem_reduction_sz, stream>>>(output_ptr, input_ptr, dim_size);
+              } else {
+                cunn_SoftMaxForwardFast<ILP, scalar_t, accscalar_t, scalar_t, EpilogueWithMul>
+                    <<<grid, block, smem_reduction_sz, stream>>>(output_ptr, input_ptr, dim_size);
+              }
             } else {
               dim3 block = SoftMaxForward_getBlockSize(dim_size);
               size_t smem_reduction_sz = block.x / C10_WARP_SIZE * sizeof(accscalar_t);
@@ -1005,8 +1042,13 @@ Tensor host_softmax(const Tensor & input_, const int64_t dim_, const bool half_t
             if constexpr (use_fast_softmax) {
               dim3 block(512);
               size_t smem_reduction_sz = block.x / C10_WARP_SIZE * sizeof(accscalar_t);
-              cunn_SoftMaxForwardGmem<ILP, scalar_t, accscalar_t, accscalar_t, EpilogueWithMul>
-                <<<grid, block, smem_reduction_sz, stream>>>(output_ptr, input_ptr, dim_size);
+              if (dim_size % ILP == 0) {
+                cunn_SoftMaxForwardGmem<ILP, scalar_t, accscalar_t, accscalar_t, EpilogueWithMul>
+                    <<<grid, block, smem_reduction_sz, stream>>>(output_ptr, input_ptr, dim_size);
+              } else {
+                cunn_SoftMaxForwardFast<ILP, scalar_t, accscalar_t, accscalar_t, EpilogueWithMul>
+                    <<<grid, block, smem_reduction_sz, stream>>>(output_ptr, input_ptr, dim_size);
+              }
             } else {
               dim3 block = SoftMaxForward_getBlockSize(dim_size);
               size_t smem_reduction_sz = block.x / C10_WARP_SIZE * sizeof(accscalar_t);
