@@ -297,6 +297,9 @@ class ConstDictVariable(VariableTracker):
         if self.source:
             install_guard(self.make_guard(GuardBuilder.DICT_KEYS_MATCH))
 
+    def get_contains_guard_builder_type(self):
+        return GuardBuilder.DICT_CONTAINS
+
     def install_dict_contains_guard(self, tx, args):
         # Key guarding - These are the cases to consider
         # 1) The dict has been mutated. In this case, we would have already
@@ -324,7 +327,7 @@ class ConstDictVariable(VariableTracker):
             install_guard(
                 self.make_guard(
                     functools.partial(
-                        GuardBuilder.DICT_CONTAINS,
+                        self.get_contains_guard_builder_type(),
                         key=args[0].value,
                         invert=not contains,
                     )
@@ -335,6 +338,10 @@ class ConstDictVariable(VariableTracker):
                 self.realize_key_vt(args[0])
             else:
                 self.install_dict_keys_match_guard()
+
+    def guard_on_key_order(self, tx):
+        if self.source:
+            tx.output.guard_on_key_order.add(self.source.name())
 
     def call_method(
         self,
@@ -370,21 +377,18 @@ class ConstDictVariable(VariableTracker):
         elif name == "items":
             assert not (args or kwargs)
             self.install_dict_keys_match_guard()
-            if self.source:
-                tx.output.guard_on_key_order.add(self.source.name())
+            self.guard_on_key_order(tx)
             return TupleVariable(
                 [TupleVariable([k.vt, v]) for k, v in self.items.items()]
             )
         elif name == "keys":
             self.install_dict_keys_match_guard()
-            if self.source:
-                tx.output.guard_on_key_order.add(self.source.name())
+            self.guard_on_key_order(tx)
             assert not (args or kwargs)
             return DictKeysVariable(self)
         elif name == "values":
             self.install_dict_keys_match_guard()
-            if self.source:
-                tx.output.guard_on_key_order.add(self.source.name())
+            self.guard_on_key_order(tx)
             assert not (args or kwargs)
             return DictValuesVariable(self)
         elif name == "copy":
@@ -502,6 +506,32 @@ class NNModuleHooksDictVariable(ConstDictVariable):
 
     def install_dict_contains_guard(self, tx, args):
         pass
+
+
+class MappingProxyDictVariable(ConstDictVariable):
+    def call_method(
+        self,
+        tx,
+        name,
+        args: "list[VariableTracker]",
+        kwargs: "dict[str, VariableTracker]",
+    ) -> "VariableTracker":
+        if name in ("update", "pop", "popitem", "clear", "setdefault"):
+            raise_observed_exception(AttributeError, tx)
+        elif name in ("__setitem__", "__delitem__"):
+            raise_observed_exception(TypeError, tx)
+        return super().call_method(tx, name, args, kwargs)
+
+    def guard_on_key_order(self, tx):
+        # Guard on all the keys
+        self.install_dict_keys_match_guard()
+
+    def get_contains_guard_builder_type(self):
+        return GuardBuilder.MAPPING_CONTAINS
+
+    def install_dict_keys_match_guard(self):
+        if self.source:
+            install_guard(self.make_guard(GuardBuilder.MAPPING_KEYS_MATCH))
 
 
 class DefaultDictVariable(ConstDictVariable):
@@ -669,6 +699,10 @@ class SetVariable(ConstDictVariable):
         pass
 
     def install_dict_contains_guard(self, tx, args):
+        # Already EQUALS_MATCH guarded
+        pass
+
+    def guard_on_key_order(self, tx):
         # Already EQUALS_MATCH guarded
         pass
 

@@ -130,6 +130,7 @@ from .dicts import (
     DefaultDictVariable,
     DictKeySetVariable,
     FrozensetVariable,
+    MappingProxyDictVariable,
     SetVariable,
 )
 from .distributed import (
@@ -439,6 +440,7 @@ class VariableBuilder:
             (weakref.ReferenceType, cls.wrap_weakref),
             (torch.utils.hooks.RemovableHandle, cls.wrap_removable_handle),
             (torch.jit.ScriptFunction, cls.wrap_jit_function),
+            (types.MappingProxyType, cls.wrap_mapping_proxy),
         ]
 
         if trace_numpy and np:
@@ -473,6 +475,37 @@ class VariableBuilder:
         return WrapperUserFunctionVariable(
             value, "_torchdynamo_inline", source=self.source
         )
+
+    def wrap_mapping_proxy(self, value):
+        self.install_guards(GuardBuilder.TYPE_MATCH)
+        all_const = all(ConstantVariable.is_literal(k) for k in value.keys())
+
+        if not all_const:
+            unimplemented("MappingProxyType supported only with const keys")
+
+        # We need all the keys to be hashable. We do this within the
+        # _HashableTracker class in dicts.py
+        def build_key_value(i, k, v):
+            key = ConstantVariable.create(k)
+            source_key = k
+
+            # NB - Deliberately choosing GetItemSource and not
+            # DictGetItemSource, because DictGetItemSource uses PyDict_GetItem
+            # which does not work with MappingProxyType.
+            source_value = GetItemSource(self.get_source(), source_key)
+            value = LazyVariableTracker.create(v, source_value)
+
+            return key, value
+
+        result = dict(
+            build_key_value(i, k, v) for i, (k, v) in enumerate(value.items())
+        )
+
+        result = MappingProxyDictVariable(
+            result, user_cls=type(value), source=self.source
+        )
+
+        return self.tx.output.side_effects.track_mutable(value, result)
 
     @classmethod
     @functools.lru_cache(None)
