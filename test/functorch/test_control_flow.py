@@ -7499,11 +7499,11 @@ class DynamicCondModel(torch.nn.Module):
         return x
 
 
+@unittest.skipIf(
+    not TEST_CUDA_GRAPH_CONDITIONAL_NODES,
+    "CUDA 12.4 or greater is required for CUDA Graphs with conditional nodes",
+)
 class TestControlFlowNN(TestCase):
-    @unittest.skipIf(
-        not TEST_CUDA_GRAPH_CONDITIONAL_NODES,
-        "CUDA 12.4 or greater is required for CUDA Graphs with conditional nodes",
-    )
     def test_cond_in_NN(self):
         model = DynamicCondModel().cuda()
 
@@ -7511,6 +7511,10 @@ class TestControlFlowNN(TestCase):
         _check_compile_cudagraph(self, model, [x])
 
 
+@unittest.skipIf(
+    not TEST_CUDA_GRAPH_CONDITIONAL_NODES,
+    "CUDA 12.4 or greater is required for CUDA Graphs with conditional nodes",
+)
 class TestControlFlowAndRNG(TestCase):
     @parametrize("rng_func", ["custom_generator", "default_generator"])
     def test_rng_with_conditional_nodes_warns(self, rng_func):
