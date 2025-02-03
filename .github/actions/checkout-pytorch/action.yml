@@ -34,6 +34,7 @@ runs:
           git clean -ffdx
         fi
         git config --global fetch.parallel 0
+        git config --global submodule.fetchJobs 0
 
     - name: Checkout PyTorch
       uses: actions/checkout@v4
