@@ -158,7 +158,7 @@ jobs:
           docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
 
       - name: hello
-        run: ls /var/lib
+        run: ls /var/lib/docker
         shell: bash
 
       - name: Parse ref
