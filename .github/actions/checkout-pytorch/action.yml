@@ -33,6 +33,7 @@ runs:
         if [[ -d .git ]]; then
           git clean -ffdx
         fi
+        git config --global fetch.parallel 0
 
     - name: Checkout PyTorch
       uses: actions/checkout@v4
