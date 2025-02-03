@@ -42,7 +42,7 @@ on:
       runner:
         required: false
         type: string
-        default: "linux.2xlarge"
+        default: "linux.4xlarge"
         description: |
           Label of the runner this job should run on.
       test-matrix:
