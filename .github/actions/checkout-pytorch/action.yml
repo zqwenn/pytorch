@@ -42,3 +42,11 @@ runs:
         fetch-depth: ${{ inputs.fetch-depth }}
         submodules: ${{ inputs.submodules }}
         show-progress: false
+
+    - name: check git config
+      shell: bash
+      env:
+        NO_SUDO: ${{ inputs.no-sudo }}
+      run: |
+        cd "${GITHUB_WORKSPACE}"
+        git config --list
