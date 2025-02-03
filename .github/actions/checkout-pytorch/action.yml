@@ -28,7 +28,11 @@ runs:
       env:
         NO_SUDO: ${{ inputs.no-sudo }}
       run: |
-        git clean -ffdx
+        cd "${GITHUB_WORKSPACE}"
+        ls
+        if [[ -d .git ]]; then
+          git clean -ffdx
+        fi
 
     - name: Checkout PyTorch
       uses: actions/checkout@v4
