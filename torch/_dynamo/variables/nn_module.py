@@ -15,6 +15,7 @@ from ..exc import (
     unimplemented,
     UnspecializeRestartAnalysis,
     Unsupported,
+    UnsupportedAttribute,
 )
 from ..guards import GuardBuilder, install_guard
 from ..mutation_guard import GenerationTracker
@@ -288,8 +289,11 @@ class NNModuleVariable(VariableTracker):
                 )
                 if result is not None:
                     return result
-                # if we can't find a __getattr__, just raise the AttributeError
-                raise
+                # if we can't find a __getattr__, we can't parse this, raise unimplemented
+                unimplemented(
+                    f"missing attribute {name} - {typestr(base)}",
+                    exc_class=UnsupportedAttribute,
+                )
 
         if name == "forward":
             guard_to_detect_forward_monkeypatching(self.source, base)

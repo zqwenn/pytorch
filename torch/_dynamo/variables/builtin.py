@@ -22,6 +22,7 @@ from ..exc import (
     AttributeMutationError,
     unimplemented,
     Unsupported,
+    UnsupportedAttribute,
     UserError,
     UserErrorType,
 )
@@ -1907,7 +1908,7 @@ class BuiltinVariable(VariableTracker):
 
                 try:
                     getattr_var = obj.var_getattr(tx, name_var.as_python_constant())
-                except AttributeError:
+                except (AttributeError, UnsupportedAttribute):
                     getattr_var = None
 
                 if isinstance(getattr_var, variables.TensorVariable):
