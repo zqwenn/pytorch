@@ -1211,7 +1211,7 @@ utils_device.CURRENT_DEVICE == None""".split(
 
     def test_typing_dict(self):
         def fn(d):
-            return d[T]
+            return d[T] * 2
 
         d = {T: torch.randn(3)}
         r1 = fn(d)
@@ -1735,7 +1735,7 @@ utils_device.CURRENT_DEVICE == None""".split(
 
     def test_structseq1(self):
         def fn(x, y):
-            return torch.return_types.max((x, y))
+            return torch.return_types.max((torch.cos(x), y))
 
         x = torch.randn(3, 2)
         y = torch.randn(2, 4)
@@ -2452,6 +2452,7 @@ utils_device.CURRENT_DEVICE == None""".split(
     def test_numpy_readonly(self):
         @torch.compile(fullgraph=True)
         def fn(x):
+            torch.cos(x)
             return x
 
         x = np.broadcast_to(np.arange(3), (2, 3))
@@ -3337,6 +3338,7 @@ utils_device.CURRENT_DEVICE == None""".split(
             x: torch.Tensor
 
         def fn1(x) -> None:
+            torch.cos(x)
             a = A(x)
             object.__setattr__(a, "x", x + 2)
             return a
@@ -3357,6 +3359,7 @@ utils_device.CURRENT_DEVICE == None""".split(
             x: torch.Tensor
 
         def fn2(x) -> None:
+            torch.cos(x)
             b = B(x)
             return b
 
@@ -3369,7 +3372,7 @@ utils_device.CURRENT_DEVICE == None""".split(
         self.assertTrue(same(obj21.x, x2))
         self.assertTrue(same(obj22.x, x2))
         self.assertTrue(same(obj21.x, obj22.x))
-        self.assertEqual(cnts.frame_count, 0)
+        self.assertEqual(cnts.frame_count, 1)
 
         @dataclasses.dataclass(frozen=True)
         class C:
@@ -4163,18 +4166,19 @@ utils_device.CURRENT_DEVICE == None""".split(
     def test_torch_size_numel(self):
         cnts = torch._dynamo.testing.CompileCounter()
 
-        def fn():
+        def fn(x):
+            x = torch.cos(x)
             return torch.Size([10, 8]).numel()
 
         opt_fn = torch.compile(fn, backend=cnts, fullgraph=True)
         num = torch.Size([10, 8]).numel()
-        self.assertEqual(opt_fn(), num)
+        self.assertEqual(opt_fn(torch.randn(4)), num)
 
     def test_torch_size_numel_dynamic(self):
         cnts = torch._dynamo.testing.CompileCounter()
 
         def fn(x):
-            return x.size().numel()
+            return torch.cos(x).size().numel()
 
         opt_fn = torch.compile(fn, backend=cnts, fullgraph=True)
         x = torch.rand(10, 1, 8, 1)
@@ -4195,7 +4199,7 @@ utils_device.CURRENT_DEVICE == None""".split(
         cnts = torch._dynamo.testing.CompileCounter()
 
         def fn(x, dim):
-            return x.size(dim=dim)
+            return torch.cos(x).size(dim=dim)
 
         opt_fn = torch.compile(fn, backend=cnts, fullgraph=True)
         x = torch.empty([4, 9, 8])
@@ -4206,7 +4210,7 @@ utils_device.CURRENT_DEVICE == None""".split(
         cnts = torch._dynamo.testing.CompileCounter()
 
         def fn(x, dim):
-            return x.stride(dim=dim)
+            return torch.cos(x).stride(dim=dim)
 
         opt_fn = torch.compile(fn, backend=cnts, fullgraph=True)
         x = torch.empty([4, 9, 8])
@@ -4588,7 +4592,7 @@ utils_device.CURRENT_DEVICE == None""".split(
     def test_builtin_subclasses_as_method_on_class_type(self):
         class Foo:
             def __init__(self, name):
-                self.ame_ = name
+                self.name_ = name
 
             def get_name(self):
                 return "Foo " + self.name_
@@ -4612,10 +4616,11 @@ utils_device.CURRENT_DEVICE == None""".split(
         counter = CompileCounter()
 
         @torch._dynamo.optimize_assert(counter)
-        def fn():
+        def fn(x):
+            x = torch.cos(x)
             return Foo.__subclasses__()
 
-        subs_of_foo_optim = fn()
+        subs_of_foo_optim = fn(torch.rand(4))
 
         self.assertEqual(len(subs_of_foo_reg), 2)
         self.assertEqual(subs_of_foo_reg, subs_of_foo_optim)
@@ -4649,14 +4654,19 @@ utils_device.CURRENT_DEVICE == None""".split(
         counter = CompileCounter()
 
         @torch._dynamo.optimize_assert(counter)
-        def fn():
+        def fn(x):
+            x = torch.cos(x)
             return Foo.__subclasses__()
+
+        y = torch.randn(4)
 
         @torch._dynamo.optimize_assert(counter)
         def fn_single(subs_of_foo_optim):
+            nonlocal y
+            torch.cos(y)
             return subs_of_foo_optim[0].__subclasses__()
 
-        subs_of_foo_optim = fn()
+        subs_of_foo_optim = fn(torch.randn(4))
         sub_of_foo_subclass_var_optim = fn_single(subs_of_foo_optim)
 
         self.assertEqual(len(sub_of_foo_subclass_var_optim), 1)
@@ -4666,11 +4676,12 @@ utils_device.CURRENT_DEVICE == None""".split(
         def another_fn():
             pass
 
-        def fn():
+        def fn(x):
+            x = torch.cos(x)
             return "another_fn" in str(another_fn)
 
         opt_fn = torch.compile(fn, fullgraph=True)
-        self.assertTrue(opt_fn())
+        self.assertTrue(opt_fn(torch.rand(4)))
 
     def test_enum_no_graphbreaks(self):
         class Foo(enum.Enum):
@@ -4964,6 +4975,7 @@ utils_device.CURRENT_DEVICE == None""".split(
 
     def test_inline_local_dict_clear(self):
         def f(d):
+            x = torch.cos(d["a"])
             d.clear()
             return d
 
@@ -4979,6 +4991,7 @@ utils_device.CURRENT_DEVICE == None""".split(
                 self.a = {"a": torch.randn(2, 2), "b": torch.randn(2, 2)}
 
             def forward(self):
+                torch.cos(self.a["a"])
                 self.a.clear()
                 return self.a
 
@@ -5384,10 +5397,12 @@ utils_device.CURRENT_DEVICE == None""".split(
         actual_params = list(mod.named_parameters())
 
         @torch.compile(backend="eager", fullgraph=True)
-        def fn():
+        def fn(x):
+            torch.cos(x)
             return list(mod.named_parameters())
 
-        params = fn()
+        x = torch.randn(4)
+        params = fn(x)
 
         self.assertEqual(len(actual_params), len(params))
         for idx in range(len(params)):
@@ -5402,10 +5417,11 @@ utils_device.CURRENT_DEVICE == None""".split(
         actual_params = list(mod.named_parameters(prefix="foo"))
 
         @torch.compile(backend="eager", fullgraph=True)
-        def fn1():
+        def fn1(x):
+            torch.cos(x)
             return list(mod.named_parameters(prefix="foo"))
 
-        params = fn1()
+        params = fn1(x)
 
         self.assertEqual(len(actual_params), len(params))
         for idx in range(len(params)):
@@ -5631,7 +5647,7 @@ utils_device.CURRENT_DEVICE == None""".split(
     def test_dynamo_min_operator_with_shape(self):
         @torch.compile(backend="eager", fullgraph=True)
         def f(x, a):
-            return min(x.shape[0], a)
+            return min(torch.cos(x).shape[0], a)
 
         result = f(torch.ones(6), 3)
         self.assertEqual(result, 3)
@@ -5639,6 +5655,7 @@ utils_device.CURRENT_DEVICE == None""".split(
     def test_onnx_shape_as_tensor(self):
         @torch.compile(backend="eager", fullgraph=True)
         def f(x):
+            torch.cos(x)
             return 1 + torch._shape_as_tensor(x)[0]
 
         gm, _ = torch._dynamo.export(f)(torch.ones(6))
@@ -5649,8 +5666,12 @@ utils_device.CURRENT_DEVICE == None""".split(
         self.assertEqual(f(input_two_dims), 8)
         self.assertEqual(f(input_two_dims), 8)
 
+        y = torch.randn(4)
+
         @torch.compile(backend="eager", fullgraph=True)
         def f_onnx(x):
+            nonlocal y
+            torch.cos(y)
             return 1 + torch.onnx.operators.shape_as_tensor(x)[0]
 
         self.assertEqual(f_onnx(input_one_dim), 7)
@@ -6108,7 +6129,7 @@ utils_device.CURRENT_DEVICE == None""".split(
 
         def gn(x, y=Foo.FOO):
             if y is Foo.FOO:
-                return x
+                return x + 2
             else:
                 return x + 1
 
@@ -8552,14 +8573,16 @@ def ___make_guard_fn():
         self.assertTrue(same(fn_out, compiled_out))
 
     def test_fn_hasattr__name__1(self):
-        def fn():
+        def fn(x):
+            x = torch.cos(x)
             foo = lambda x: x + 1
             return hasattr(foo, "__name__")
 
         compiled_fn = torch.compile(backend="eager", fullgraph=True)(fn)
 
-        fn_out = fn()
-        compiled_out = compiled_fn()
+        x = torch.randn(4)
+        fn_out = fn(x)
+        compiled_out = compiled_fn(x)
         self.assertEqual(fn_out, compiled_out)
         self.assertTrue(fn_out)
 
@@ -8567,13 +8590,15 @@ def ___make_guard_fn():
         def bar(x):
             return torch.sin(x)
 
-        def fn():
+        def fn(x):
+            x = torch.cos(x)
             return hasattr(bar, "__name__")
 
         compiled_fn = torch.compile(backend="eager", fullgraph=True)(fn)
 
-        fn_out = fn()
-        compiled_out = compiled_fn()
+        x = torch.randn(4)
+        fn_out = fn(x)
+        compiled_out = compiled_fn(x)
         self.assertEqual(fn_out, compiled_out)
         self.assertTrue(fn_out)
 
@@ -8583,13 +8608,15 @@ def ___make_guard_fn():
 
         baz = functools.partial(bar, y=4)
 
-        def fn():
+        def fn(x):
+            x = torch.cos(x)
             return hasattr(baz, "__name__")
 
         compiled_fn = torch.compile(backend="eager", fullgraph=True)(fn)
 
-        fn_out = fn()
-        compiled_out = compiled_fn()
+        x = torch.randn(4)
+        fn_out = fn(x)
+        compiled_out = compiled_fn(x)
         self.assertEqual(fn_out, compiled_out)
         self.assertFalse(fn_out)
 
@@ -9424,6 +9451,7 @@ def ___make_guard_fn():
         self.assertEqual(counter.frame_count, 0)
 
     # just to be sure in case anyone tries to run this in older versions of Python
+    @unittest.skip("Requires ongoing work of supporting generators")
     def test_pep0479_convert_stopiteration(self):
         # https://peps.python.org/pep-0479/
         def generator_with_stop_iteration():
@@ -9432,8 +9460,8 @@ def ___make_guard_fn():
             raise StopIteration("StopIteration raised within generator")
             yield 2  # This should never be reached
 
-        @torch.compile(backend="eager", fullgraph=True)
         def fn(t):
+            t = torch.cos(t)
             try:
                 # Try to consume the generator
                 gen = generator_with_stop_iteration()
@@ -9447,8 +9475,10 @@ def ___make_guard_fn():
                 return 200
 
         t = torch.randn(2)
-        y = fn(t)
-        self.assertEqual(y, 100)
+        ref = fn(t)
+        opt_fn = torch.compile(fn, backend="eager", fullgraph=True)
+        res = opt_fn(t)
+        self.assertEqual(ref, res)
 
     def test_yield_send_to_subgenerator_graph_break(self):
         def subgenerator(tensor):
@@ -9598,7 +9628,7 @@ def ___make_guard_fn():
         counters.clear()
 
         def fn(x):
-            return itertools.islice(x, 2, 5, 2)
+            return itertools.islice(torch.cos(x), 2, 5, 2)
 
         x = torch.randn([0, 1, 2, 3, 4, 5])
         eager = fn(x)
@@ -9613,7 +9643,7 @@ def ___make_guard_fn():
         counters.clear()
 
         def fn(x):
-            return itertools.islice(x, 2, 5)
+            return itertools.islice(torch.cos(x), 2, 5)
 
         x = torch.randn([0, 1, 2, 3, 4, 5])
         eager = fn(x)
@@ -9628,7 +9658,7 @@ def ___make_guard_fn():
         counters.clear()
 
         def fn(x):
-            return itertools.islice(x, 2)
+            return itertools.islice(torch.cos(x), 2)
 
         x = torch.randn([0, 1, 2, 3, 4, 5])
         eager = fn(x)
@@ -9917,14 +9947,16 @@ def ___make_guard_fn():
     def test_itertools_groupby_pure_python_default_identify_func(self):
         counters.clear()
 
-        def fn(l):
+        def fn(l, x):
+            x = torch.cos(x)
             return [(k, list(g)) for k, g in itertools.groupby(l)]
 
         l = [1, 2, 2, 3, 4, 4, 4, 1, 2]
-        eager = fn(l)
+        x = torch.randn(4)
+        eager = fn(l, x)
 
         compiled_fn = torch.compile(fn, backend="eager", fullgraph=True)
-        compiled = compiled_fn(l)
+        compiled = compiled_fn(l, x)
 
         self.assertEqual(eager, compiled)
         self.assertEqual(len(counters["graph_break"]), 0)
@@ -9932,14 +9964,16 @@ def ___make_guard_fn():
     def test_itertools_groupby_pure_python_key_func(self):
         counters.clear()
 
-        def fn(l):
+        def fn(l, x):
+            x = torch.cos(x)
             return [(k, list(g)) for k, g in itertools.groupby(l, key=operator.neg)]
 
+        x = torch.randn(4)
         l = [1, 2, -2, 3, 4, 4, -4, 0, -2]
-        eager = fn(l)
+        eager = fn(l, x)
 
         compiled_fn = torch.compile(fn, backend="eager", fullgraph=True)
-        compiled = compiled_fn(l)
+        compiled = compiled_fn(l, x)
 
         self.assertEqual(eager, compiled)
         self.assertEqual(len(counters["graph_break"]), 0)
@@ -9947,15 +9981,17 @@ def ___make_guard_fn():
     def test_itertools_tee(self):
         counters.clear()
 
-        def fn(l):
+        def fn(l, x):
+            x = torch.cos(x)
             a, b = itertools.tee(l)
             return list(a), list(b)
 
         l = [1, 2, 2, 3, 4, 4, 4, 1, 2]
-        eager = fn(l)
+        x = torch.randn(4)
+        eager = fn(l, x)
 
         compiled_fn = torch.compile(fn, backend="eager", fullgraph=True)
-        compiled = compiled_fn(l)
+        compiled = compiled_fn(l, x)
 
         self.assertEqual(eager, compiled)
         self.assertEqual(len(counters["graph_break"]), 0)

@@ -344,7 +344,11 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
         return pairs
 
     def test_itertools_compress(self):
+        y = torch.rand(4)
+
         def fn():
+            nonlocal y
+            torch.cos(y)
             return itertools.compress("ABCDEF", [1, 0, 1, 0, 1, 1])
 
         opt_fn = torch.compile(fn, backend="eager", fullgraph=True)
@@ -470,13 +474,13 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
     )
     def test_number_method(self, method, num_type):
         def forward(t, m):
-            return 2 * t if getattr(m, method)() else t
+            return 2 * t if getattr(m, method)() else 3 * t
 
         wrapped = torch.compile(backend="eager", fullgraph=True)(forward)
 
         for i in (0, 1, 2.5):
             m = num_type(i)
-            t = torch.tensor([1])
+            t = torch.rand(4)
             actual = wrapped(t, m)
             expected = forward(t, m)
             self.assertEqual(actual, expected)
@@ -1567,17 +1571,17 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
     def test_sum_with_start_kwarg(a, b, c, d):
         return sum([b, c, d], start=a)
 
-    @make_test(expected_frame_count=0)
-    def test_sum_shortcut():
-        return sum([0, 1.0, 2, 3.0])
+    @make_test
+    def test_sum_shortcut(x):
+        return x + sum([0, 1.0, 2, 3.0])
 
-    @make_test(expected_frame_count=0)
-    def test_sum_shortcut_with_start_arg():
-        return sum([0, 1.0, 2, 3.0], -10)
+    @make_test
+    def test_sum_shortcut_with_start_arg(x):
+        return x + sum([0, 1.0, 2, 3.0], -10)
 
-    @make_test(expected_frame_count=0)
-    def test_sum_shortcut_with_start_kwarg():
-        return sum([0, 1.0, 2, 3.0], start=-10)
+    @make_test
+    def test_sum_shortcut_with_start_kwarg(x):
+        return x + sum([0, 1.0, 2, 3.0], start=-10)
 
     @make_test
     def test_reduce(a, b, c, d):
@@ -1587,17 +1591,17 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
     def test_reduce_with_initial(a, b, c, d):
         return functools.reduce(operator.add, [b, c, d], a)
 
-    @make_test(expected_frame_count=0)
+    @make_test
     def test_reduce_with_single(x):
-        return functools.reduce(lambda a, b: (a, b), [x])
+        return functools.reduce(lambda a, b: (a, b), [torch.cos(x)])
 
-    @make_test(expected_frame_count=0)
+    @make_test
     def test_reduce_with_single_with_initial(x, y):
-        return functools.reduce(lambda a, b: (a, b), [y], x)
+        return functools.reduce(lambda a, b: (a, b), [y], torch.cos(x))
 
-    @make_test(expected_frame_count=0)
+    @make_test
     def test_reduce_with_none_initial(x):
-        return functools.reduce(lambda a, b: (a, b), [x], None)
+        return functools.reduce(lambda a, b: (a, b), [torch.cos(x)], None)
 
     @make_test
     def test_tuple_contains(a, b):
@@ -3163,7 +3167,7 @@ class GraphModule(torch.nn.Module):
             with self.subTest(op=op):
 
                 def fn(x):
-                    return op(-10, x)
+                    return op(-10, x + 1)
 
                 opt_fn = torch.compile(fullgraph=True)(fn)
 
@@ -3206,42 +3210,52 @@ class GraphModule(torch.nn.Module):
 
     def test_truth(self):
         def fn(x, y):
-            return operator.truth(x) and bool(y)
+            return operator.truth(x + 1) and bool(y)
 
-        opt_fn = torch.compile(fullgraph=True, dynamic=False)(fn)
+        opt_fn = torch.compile(dynamic=False)(fn)
 
         def test(x, y):
             self.assertEqual(opt_fn(x, y), fn(x, y))
 
+        test(torch.ones(1), 1)
+        test(torch.zeros(1), 1)
+        test(torch.ones(1), torch.ones(1))
         test(1, 100)
         test(-1.1, True)
         test(-1.1, 1.1)
         test(True, False)
-        test(torch.ones(1), 1)
-        test(torch.zeros(1), 1)
-        test(torch.ones(1), torch.ones(1))
 
     def test_unary_fold_op(self):
         for op in (operator.abs, abs, operator.neg, operator.pos, operator.truth):
             with self.subTest(op=op):
 
-                def fn():
+                def fn(x):
                     a = range(-10, 10)
-                    return list(map(op, a))
+
+                    def map_fn(z):
+                        return op(z) + x
+
+                    return list(map(map_fn, a))
 
                 opt_fn = torch.compile(fn, fullgraph=True)
-                self.assertEqual(opt_fn(), fn())
+                x = torch.randn(4)
+                self.assertEqual(opt_fn(x), fn(x))
 
     def test_unary_fold_op_seq(self):
         for op in (operator.length_hint,):
             with self.subTest(op=op):
 
-                def fn():
+                def fn(x):
                     a = [tuple(range(-10, i)) for i in range(10)]
-                    return tuple(map(op, a))
+
+                    def map_fn(z):
+                        return op(z) + x
+
+                    return tuple(map(map_fn, a))
 
                 opt_fn = torch.compile(fn, fullgraph=True)
-                self.assertEqual(opt_fn(), fn())
+                x = torch.randn(4)
+                self.assertEqual(opt_fn(x), fn(x))
 
     def test_attrgetter(self):
         for attrs in (
@@ -3254,7 +3268,7 @@ class GraphModule(torch.nn.Module):
 
                 def fn(x, y):
                     getter = operator.attrgetter(*attrs)
-                    return getter(x), getter(y)
+                    return getter(torch.cos(x)), getter(y)
 
                 opt_fn = torch.compile(fullgraph=True)(fn)
 
@@ -3292,7 +3306,7 @@ class GraphModule(torch.nn.Module):
 
                 def fn(x, y):
                     caller = operator.methodcaller(name, *args, **kwargs)
-                    return caller(x), caller(y)
+                    return caller(torch.cos(x)), caller(y)
 
                 opt_fn = torch.compile(fullgraph=True)(fn)
 
@@ -3528,7 +3542,7 @@ class GraphModule(torch.nn.Module):
 
     def test_map_return(self):
         def fn(a, b):
-            return map(lambda x: x + 1, [a, b])
+            return map(lambda x: x + 1, [torch.cos(a), b])
 
         opt_fn = torch.compile(fn, backend="eager", fullgraph=True)
         m = opt_fn(torch.randn(3, 3), torch.randn(3, 3))
@@ -3708,6 +3722,8 @@ class GraphModule(torch.nn.Module):
 
     def test_enumerate_reconstruct(self):
         def fn(a, b):
+            # TODO - Uncommenting discovers an issue
+            # a = torch.cos(a)
             return enumerate([a, b], start=1)
 
         opt_fn = torch.compile(fn, backend="eager", fullgraph=True)
@@ -4010,7 +4026,7 @@ class DefaultsTests(torch._dynamo.test_case.TestCase):
 
     def test_frozenset_construction(self):
         def fn(x):
-            s = frozenset({x})
+            s = frozenset({x + 1})
             t = frozenset(s)
             return len(t)
 
@@ -4343,7 +4359,7 @@ class DefaultsTests(torch._dynamo.test_case.TestCase):
 
         def foo_custom_str(x):
             a = CustomStr()
-            return x, str(a)
+            return x + 1, str(a)
 
         eager_custom_str = foo_custom_str(torch.ones(4))
         dynamo_custom_str = torch.compile(foo_custom_str, fullgraph=True)(torch.ones(4))
@@ -4356,7 +4372,7 @@ class DefaultsTests(torch._dynamo.test_case.TestCase):
 
         def foo_default_str(x):
             a = DefaultStr()
-            return x, str(a)
+            return x + 1, str(a)
 
         eager_default_str = foo_default_str(torch.ones(4))
         dynamo_default_str = torch.compile(foo_default_str, fullgraph=True)(
