@@ -140,6 +140,18 @@ jobs:
           docker images  -a
         shell: bash
 
+      - name: Pull docker image
+        uses: pytorch/test-infra/.github/actions/pull-docker-image@main
+        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+        with:
+          docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/pytorch/pytorch-linux-focal-cuda12.4-cudnn9-py3-gcc9:95229c999f1d9aff619f5a7fbb0495a67744d3c7
+
+      - name: hello3
+        run: |
+          # list docker images
+          docker images  -a
+        shell: bash
+
       - name: Calculate docker image
         id: calculate-docker-image
         uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
@@ -162,6 +174,12 @@ jobs:
         if: inputs.build-environment != 'linux-s390x-binary-manywheel'
         with:
           docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
+
+      - name: hello3
+        run: |
+          # list docker images
+          docker images  -a
+        shell: bash
 
       - name: hello
         run: sudo ls /var/lib/docker
