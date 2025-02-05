@@ -134,6 +134,12 @@ jobs:
           role-session-name: gha-linux-build
           aws-region: us-east-1
 
+      - name: hello2
+        run: |
+          # list docker images
+          docker images
+        shell: bash
+
       - name: Calculate docker image
         id: calculate-docker-image
         uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
