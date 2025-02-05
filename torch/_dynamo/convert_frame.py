@@ -107,6 +107,7 @@ from .trace_rules import is_numpy
 from .utils import (
     chromium_event_timed,
     CleanupManager,
+    CompileEventLogger,
     CompileTimeInstructionCounter,
     counters,
     dynamo_timed,
@@ -1176,6 +1177,7 @@ class ConvertFrame:
             torch._C._dynamo.eval_frame.CacheLimitHitFlag,
         ]
     ]:
+        print('in call')
         counters["frames"]["total"] += 1
         try:
             result = self._inner_convert(
@@ -1196,6 +1198,7 @@ class ConvertFrame:
             # to me (ezyang, Aug 2023) so I kept it, but maybe at some point
             # someone wanted these to also get suppressed.  If so, you'll
             # need to make these exceptions not get wrapped
+            print('in except')
 
             # We intentionally don't want to suppress error here.
             if isinstance(e, UncapturedHigherOrderOpError):
@@ -1207,9 +1210,7 @@ class ConvertFrame:
             # when we do not support graph breaks on bytecodes like LOAD_ATTR,
             # BUILD_SET etc. In such case, we can fallback to eager without
             # scaring users.
-            if isinstance(e, Unsupported) and graph_break_log.isEnabledFor(
-                logging.DEBUG
-            ):
+            if soft_fail and graph_break_log.isEnabledFor(logging.DEBUG):
                 # Log this message in the graph break. Also use the string
                 # "skip: " to tell that the whole frame is falling back to
                 # eager.
@@ -1232,6 +1233,8 @@ class ConvertFrame:
                             user_stack_trace,
                             exc_info=True,
                         )
+            print('at log')
+            CompileEventLogger.increment_toplevel("num_graph_breaks")
 
             if not config.suppress_errors and not soft_fail:
                 raise

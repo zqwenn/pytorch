@@ -75,6 +75,57 @@ class TestUtils(TestCase):
             )
         )
 
+    @dynamo_config.patch(
+        {
+            "log_compilation_metrics": True,
+            "inline_inbuilt_nn_modules": False,
+        }
+    )
+    def test_graph_break_counting(self):
+        """
+        Run a compilation that includes a graph break and validate that the
+        graph break counter is incremented.
+        """
+
+        def run_forward_backward():
+            model = torch.compile(TestModel())
+            x = torch.rand([3], requires_grad=True)
+            output = model(x)
+            loss_fn = torch.nn.MSELoss()
+            target = torch.tensor([1.0])
+            loss = loss_fn(output, target)
+            loss.backward()
+
+        @torch.compile
+        def add(x, y):
+            return x + y
+
+        add(torch.rand([10]), torch.rand([10]))
+        utils.reset_frame_count()
+
+        compilation_events = []
+        with mock.patch("torch._dynamo.utils.log_compilation_event") as log_event:
+            run_forward_backward()
+            compilation_events = [arg[0][0] for arg in log_event.call_args_list]
+
+        self.assertEqual(compilation_events[0].num_graph_breaks, None)
+
+        # @torch.compile
+        def dynamo_error_fn(a):
+            output = a.mul(torch.ones(1000, 1000))
+            output = output.add(torch.ones(10, 10))
+            return output
+
+        # We should fallback to normal mode and increment the graph break counter thrice
+        with mock.patch("torch._dynamo.utils.log_compilation_event") as log_event:
+            try:
+                torch.compile(dynamo_error_fn, backend="inductor")(torch.ones(1000, 1000, requires_grad=True))
+            except Exception:
+                pass
+            compilation_events = [arg[0][0] for arg in log_event.call_args_list]
+
+        self.assertEqual(compilation_events[0].num_graph_breaks, 3)
+
 
 class TestModel(torch.nn.Module):
     def __init__(self):
@@ -266,6 +317,7 @@ class TestDynamoTimed(TestCase):
  'joint_graph_pass_time_us': 0,
  'log_format_version': 3,
  'non_compliant_ops': set(),
+ 'num_graph_breaks': None,
  'num_triton_bundles': None,
  'post_grad_pass_time_us': 0,
  'pre_grad_pass_time_us': 0,
@@ -348,6 +400,7 @@ class TestDynamoTimed(TestCase):
  'joint_graph_pass_time_us': None,
  'log_format_version': 3,
  'non_compliant_ops': None,
+ 'num_graph_breaks': None,
  'num_triton_bundles': None,
  'post_grad_pass_time_us': 0,
  'pre_grad_pass_time_us': None,
