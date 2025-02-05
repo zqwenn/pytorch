@@ -274,7 +274,12 @@ jobs:
             "${USED_IMAGE}" \
             ${DOCKER_SHELL_CMD}
           )
-          docker system prune
+          # list docker images
+          docker images
+          # prune unused docker images
+          docker image prune -f
+          # list docker images
+          docker images
           docker exec -t "${container_name}" sh -c '.ci/pytorch/build.sh'
 
           END_TIME=$(date +%s)
