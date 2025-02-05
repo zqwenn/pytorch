@@ -23,7 +23,7 @@ def _check(x, msg):
 _CPP_TYPE_MAP = {
     str: "std::string",
     int: "int64_t",
-    float: "double",
+    float: "F64",
     bool: "bool",
 }
 
@@ -173,9 +173,7 @@ def _staged_schema():
 
     def _handle_int_enum(name, ty):
         yaml_ret[name] = {"kind": "enum", "fields": {x.name: x.value for x in ty}}
-        cpp_enum_defs[
-            name
-        ] = f"""
+        cpp_enum_defs[name] = f"""
 enum class {name} {{
 {chr(10).join([f"  {x.name} = {x.value}," for x in ty])}
 }};
@@ -232,9 +230,7 @@ enum {name} {{
     for name, f in cpp_fields.items()])}
 }}
 """
-        cpp_class_defs[
-            name
-        ] = f"""
+        cpp_class_defs[name] = f"""
 class {name} {{
  private:
 {field_decls}
@@ -249,9 +245,7 @@ class {name} {{
         cpp_json_defs.append(f"inline {from_json_decl} {from_json_def}")
         cpp_type_decls.append(f"class {name};")
 
-        thrift_type_defs[
-            name
-        ] = f"""
+        thrift_type_defs[name] = f"""
 struct {name} {{
 {chr(10).join(f"  {f['thrift_id']}: {f['thrift_type']} {n};" for n, f in thrift_fields.items())}
 }}"""
@@ -293,9 +287,7 @@ struct {name} {{
             ]
         )
 
-        cpp_class_defs[
-            name
-        ] = f"""
+        cpp_class_defs[name] = f"""
 class {name} {{
   struct Void {{}};
 
@@ -324,9 +316,7 @@ class {name} {{
 """
         cpp_type_decls.append(f"class {name};")
 
-        thrift_type_defs[
-            name
-        ] = f"""
+        thrift_type_defs[name] = f"""
 union {name} {{
 {chr(10).join(f"  {f['thrift_id']}: {f['thrift_type']} {n};" for n, f in thrift_fields.items())}
 }}"""
@@ -448,6 +438,44 @@ void to_json(nlohmann::json& j, const ForwardRef<T>& p) {{
 template <typename T>
 void from_json(const nlohmann::json& j, ForwardRef<T>& p) {{
   p.emplace(j.template get<T>());
+}}
+
+class F64 {{
+ public:
+  double get() const {{
+    return value_;
+  }}
+
+  void set(double value) {{
+    value_ = value;
+  }}
+
+ private:
+  double value_;
+}};
+
+inline void to_json(nlohmann::json& j, const F64& f) {{
+  if (std::isinf(f.get())) {{
+    j = "Infinity";
+  }} else if (std::isinf(-f.get())) {{
+    j = "-Infinity";
+  }} else if (std::isnan(f.get())) {{
+    j = "NaN";
+  }} else {{
+    j = f.get();
+  }}
+}}
+
+inline void from_json(const nlohmann::json& j, F64& f) {{
+  if (j == "Infinity") {{
+    f.set(std::numeric_limits<double>::infinity());
+  }} else if (j == "-Infinity") {{
+    f.set(-std::numeric_limits<double>::infinity());
+  }} else if (j == "NaN") {{
+    f.set(std::numeric_limits<double>::quiet_NaN());
+  }} else {{
+    f.set(j.get<double>());
+  }}
 }}
 
 {chr(10).join(cpp_type_decls)}
