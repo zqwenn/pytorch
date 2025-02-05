@@ -120,6 +120,7 @@ const int AOTI_TORCH_MAX_NUMEL_TO_PRINT = 64;
 
 AOTI_TORCH_DEVICE_TYPE_IMPL(cpu, CPU)
 AOTI_TORCH_DEVICE_TYPE_IMPL(cuda, CUDA)
+AOTI_TORCH_DEVICE_TYPE_IMPL(meta, Meta)
 AOTI_TORCH_DEVICE_TYPE_IMPL(xpu, XPU)
 AOTI_TORCH_DEVICE_TYPE_IMPL(privateuse1, PrivateUse1)
 #undef AOTI_TORCH_DEVICE_TYPE_IMPL
@@ -223,6 +224,10 @@ AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(int32, int32_t, Int)
 AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(int64, int64_t, Long)
 AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(bool, bool, Bool)
 AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(complex64, c10::complex<float>, ComplexFloat)
+AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(
+    complex128,
+    c10::complex<double>,
+    ComplexDouble)
 #undef AOTI_TORCH_SCALAR_TO_TENSOR_IMPL
 
 bool aoti_torch_grad_mode_is_enabled() {

@@ -6,6 +6,7 @@ import unittest
 from typing import Callable, Optional
 from unittest import mock
 
+from torch._inductor.utils import clear_inductor_caches
 from torch.export import Dim
 
 
@@ -77,8 +78,11 @@ class TestCutlassBackend(TestCase):
             ] = old_disable_fresh_cache_envvar
         torch.random.manual_seed(1234)
 
+    def tearDown(self):
+        super().tearDown()
+        clear_inductor_caches()
+
     @unittest.skipIf(not SM75OrLater, "need sm_75")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_max_autotune_cutlass_threshold(self):
         """
@@ -87,8 +91,6 @@ class TestCutlassBackend(TestCase):
 
         if torch.version.hip:
             return
-
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         def mm(a, b):
             return a @ b
@@ -128,7 +130,6 @@ class TestCutlassBackend(TestCase):
             torch.testing.assert_close(Y_compiled, Y)
 
     @unittest.skipIf(not SM75OrLater, "need sm_75")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_max_autotune_precompile(self):
         """
@@ -137,8 +138,6 @@ class TestCutlassBackend(TestCase):
 
         if torch.version.hip:
             return
-
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         def mm(a, b):
             return a @ b
@@ -167,7 +166,6 @@ class TestCutlassBackend(TestCase):
         Compile with one shape, then re-run with different input shapes
         """
         max_autotune_gemm_backends = "CUTLASS"
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         class MyModel(torch.nn.Module):
             def forward(self, a, b):
@@ -213,7 +211,6 @@ class TestCutlassBackend(TestCase):
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_diff_matmul_share_same_kernel(self, dynamic):
         max_autotune_gemm_backends = "CUTLASS"
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         class MyModel(torch.nn.Module):
             def __init__(self):
@@ -251,7 +248,6 @@ class TestCutlassBackend(TestCase):
 
     # TODO: Enable dynamic test cases when dynamic support is added.
     @unittest.skipIf(not SM75OrLater, "need sm_75")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @parametrize("dynamic", (False, True))
     @parametrize("max_autotune_gemm_backends", ("CUTLASS", "ATen,Triton,CUTLASS"))
     @parametrize("use_aoti", (False, True))
@@ -264,8 +260,6 @@ class TestCutlassBackend(TestCase):
         """
         if max_autotune_gemm_backends == "CUTLASS" and torch.version.hip:
             return
-
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         class MyModel(torch.nn.Module):
             def __init__(self):
@@ -299,7 +293,6 @@ class TestCutlassBackend(TestCase):
             torch.testing.assert_close(Y_compiled, Y)
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_max_autotune_cutlass_backend_regular_mm_streamk(
         self, dynamic: bool = False, max_autotune_gemm_backends: str = "CUTLASS"
@@ -310,8 +303,6 @@ class TestCutlassBackend(TestCase):
 
         if max_autotune_gemm_backends == "CUTLASS" and torch.version.hip:
             return
-
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         def mm(a, b):
             return a @ b
@@ -355,16 +346,11 @@ class TestCutlassBackend(TestCase):
         self,
         dynamic: bool = False,
         max_autotune_gemm_backends: str = "CUTLASS",
-        mixed_precision=False,
         fp16=True,
         expected_fuse_count=0,
         mm: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
         batch_size: Optional[int] = None,
     ):
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = (
-            mixed_precision
-        )
-
         # Note: The ops that are available
         # also depend on the alignment of the shapes
         # so if these shapes don't all align to at least 8 elements
@@ -401,95 +387,55 @@ class TestCutlassBackend(TestCase):
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
-    def test_max_autotune_cutlass_backend_simple_fusion_fp16(self):
-        def mm(a, b):
-            return (a @ b) * 3.0
-
-        #  The pointwise ops seem to be pre-fused into a single Pointwise
-        self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=False, fp16=True, expected_fuse_count=0, mm=mm
-        )
-
-    @unittest.skipIf(not SM90OrLater, "need sm_90")
-    @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     def test_max_autotune_cutlass_backend_simple_fusion_fp16_fp32acc(self):
         def mm(a, b):
             return (a @ b) * 3.0
 
         self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=True, fp16=True, expected_fuse_count=0, mm=mm
+            fp16=True, expected_fuse_count=0, mm=mm
         )
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
-    def test_max_autotune_cutlass_backend_chained_fusion_fp16(self):
-        def mm(a, b):
-            return (a @ b) * 3.3 - 1.234
-
-        #  The pointwise ops seem to be pre-fused into a single Pointwise
-        self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=False, fp16=True, expected_fuse_count=0, mm=mm
-        )
-
-    @unittest.skipIf(not SM90OrLater, "need sm_90")
-    @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     def test_max_autotune_cutlass_backend_chained_fusion_fp16_fp32acc(self):
         def mm(a, b):
             return (a @ b) * 3.3 - 1.234
 
         self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=True, fp16=True, expected_fuse_count=0, mm=mm
+            fp16=True, expected_fuse_count=0, mm=mm
         )
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
-    def test_max_autotune_cutlass_backend_relu_fusion_fp16(self):
-        def mm(a, b):
-            return torch.nn.functional.relu((a @ b) * 3.3 - 1.234)
-
-        self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=False, fp16=True, expected_fuse_count=0, mm=mm
-        )
-
-    @unittest.skipIf(not SM90OrLater, "need sm_90")
-    @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     def test_max_autotune_cutlass_backend_relu_fusion_fp16_fp32acc(self):
         def mm(a, b):
             return torch.nn.functional.relu((a @ b) * 3.3 - 1.234)
 
         #  The pointwise ops seem to be pre-fused into a single Pointwise
         self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=True, fp16=True, expected_fuse_count=0, mm=mm
+            fp16=True, expected_fuse_count=0, mm=mm
         )
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     def test_max_autotune_cutlass_backend_relu6_fusion_fp16_fp32acc(self):
         def mm(a, b):
             return torch.clamp(torch.nn.functional.relu(a @ b), max=6.0)
 
         #  The pointwise ops seem to be pre-fused into a single Pointwise
         self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=True, fp16=True, expected_fuse_count=0, mm=mm
+            fp16=True, expected_fuse_count=0, mm=mm
         )
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     def test_max_autotune_cutlass_backend_no_fusion_dtype_mismatch(self):
         def mm(a, b):
             # this should not be fused, since the output dtype is different from the matmul dtype
             return (a @ b).to(torch.float32) * 0.00001
 
         self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=True, fp16=True, expected_fuse_count=0, mm=mm
+            fp16=True, expected_fuse_count=0, mm=mm
         )
 
     def test_max_autotune_cutlass_backend_simple_bmm(self):
@@ -497,7 +443,6 @@ class TestCutlassBackend(TestCase):
             return torch.bmm(a, b)
 
         self._test_max_autotune_cutlass_backend_epilogue_fusion(  # test bmm
-            mixed_precision=False,
             fp16=True,
             expected_fuse_count=0,
             mm=bmm,
@@ -506,18 +451,16 @@ class TestCutlassBackend(TestCase):
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     @unittest.skipIf(torch.version.hip, "HIP not supported")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     def test_max_autotune_cutlass_backend_shape_dependent_normalization_fusion(self):
         def mm(a, b):
             return (a @ b) / b.size(1)
 
         self._test_max_autotune_cutlass_backend_epilogue_fusion(
-            mixed_precision=True, fp16=True, expected_fuse_count=0, mm=mm
+            fp16=True, expected_fuse_count=0, mm=mm
         )
 
     # TODO: Enable dynamic test cases when dynamic support is added.
     @unittest.skipIf(not SM75OrLater, "need sm_75")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @parametrize("dynamic", (False,))
     @parametrize("max_autotune_gemm_backends", ("CUTLASS", "ATen,Triton,CUTLASS"))
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
@@ -530,8 +473,6 @@ class TestCutlassBackend(TestCase):
 
         if max_autotune_gemm_backends == "CUTLASS" and torch.version.hip:
             return
-
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         def mm(a, b, bias):
             return torch.nn.functional.linear(a, b, bias)
@@ -566,8 +507,6 @@ class TestCutlassBackend(TestCase):
 
         if max_autotune_gemm_backends == "CUTLASS" and torch.version.hip:
             return
-
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         def addmm(x, a, b, alpha, beta):
             return torch.addmm(x, a, b, alpha=alpha, beta=beta)
@@ -606,8 +545,6 @@ class TestCutlassBackend(TestCase):
 
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_addmm_with_expanded_bias(self):
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
-
         class MyModel(torch.nn.Module):
             def forward(self, x, w):
                 bias = torch.zeros(
@@ -639,7 +576,6 @@ class TestCutlassBackend(TestCase):
 
     # TODO: Enable dynamic test cases when dynamic support is added.
     @unittest.skipIf(not SM80OrLater, "need sm_80")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @parametrize("dynamic", (False,))
     @parametrize("max_autotune_gemm_backends", ("CUTLASS", "CUTLASS,ATen"))
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
@@ -681,8 +617,6 @@ class TestCutlassBackend(TestCase):
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     def test_force_cutlass_backend_aoti_dynamic(self):
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
-
         class MyModel(torch.nn.Module):
             def forward(self, x, w):
                 return x @ w
@@ -693,6 +627,7 @@ class TestCutlassBackend(TestCase):
                 "autotune_in_subproc": False,
                 "max_autotune_gemm_backends": "CUTLASS",
                 "autotune_fallback_to_aten": False,
+                "cuda.cutlass_max_profiling_configs": 2,
                 "cuda.cutlass_dir": _CUTLASS_DIR,
             }
         ):
@@ -718,8 +653,6 @@ class TestCutlassBackend(TestCase):
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     def test_force_cutlass_backend_aoti_cexpr_codegen(self):
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
-
         class MyModel(torch.nn.Module):
             def forward(self, x, w):
                 x0, x1 = x.shape
@@ -735,6 +668,7 @@ class TestCutlassBackend(TestCase):
                 "autotune_in_subproc": False,
                 "max_autotune_gemm_backends": "CUTLASS",
                 "autotune_fallback_to_aten": False,
+                "cuda.cutlass_max_profiling_configs": 2,
                 "cuda.cutlass_dir": _CUTLASS_DIR,
             }
         ):
@@ -760,8 +694,6 @@ class TestCutlassBackend(TestCase):
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     @unittest.skipIf(not SM90OrLater, "need sm_90")
     def test_aoti_workspace_ptr(self):
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
-
         class MyModel(torch.nn.Module):
             def forward(self, x, w):
                 return x @ w
@@ -793,7 +725,6 @@ class TestCutlassBackend(TestCase):
 
     # TODO: Enable dynamic test cases when dynamic support is added.
     @unittest.skipIf(not SM80, "need sm_80 exactly")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @parametrize("dynamic", (False,))
     @parametrize("max_autotune_gemm_backends", ("CUTLASS", "CUTLASS,Triton,ATen"))
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
@@ -806,8 +737,6 @@ class TestCutlassBackend(TestCase):
 
         if max_autotune_gemm_backends == "CUTLASS" and torch.version.hip:
             return
-
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
         def mm(a, b):
             return torch.mm(a, b.to(torch.half))
@@ -848,7 +777,6 @@ class TestCutlassBackend(TestCase):
 
     # TODO: Enable dynamic test cases when dynamic support is added.
     @unittest.skipIf(not SM80, "need sm_80 exactly")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @parametrize("dynamic", (False,))
     @parametrize("max_autotune_gemm_backends", ("CUTLASS", "CUTLASS,Triton,ATen"))
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
@@ -902,7 +830,6 @@ class TestCutlassBackend(TestCase):
         assert cutlass_kernels_count > 0
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_cutlass_backend_op_denylist(
         self,
@@ -950,7 +877,6 @@ class TestCutlassBackend(TestCase):
                     assert cuda_template_count > 0, "No CUDATemplateCaller choices"
 
     @unittest.skipIf(not SM90OrLater, "need sm_90")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_cutlass_backend_op_allowlist(
         self,
@@ -998,7 +924,6 @@ class TestCutlassBackend(TestCase):
                     assert cuda_template_count > 0, "No CUDATemplateCaller choices"
 
     @unittest.skipIf(not SM80OrLater, "need sm_80")
-    @unittest.skipIf(config.is_fbcode(), "fbcode requires different CUTLASS path setup")
     @unittest.mock.patch.dict(os.environ, {"PATH": _get_path_without_sccache()})
     def test_get_max_alignment(self):
         l4 = FixedLayout("cpu", torch.half, size=(1, 2, 4), stride=(0, 4, 1))

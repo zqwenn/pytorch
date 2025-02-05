@@ -539,6 +539,10 @@ struct AutocastState {
 
   bool operator==(const AutocastState& o) const {
     for (size_t i = 0; i < DEVICES.size(); i++) {
+      // If disabled audocast, autocast_dtype comparison not occur
+      if (enabled[i] == false && o.enabled[i] == false) {
+        continue;
+      }
       if (enabled[i] != o.enabled[i] || dtype[i] != o.dtype[i]) {
         return false;
       }
@@ -2273,8 +2277,6 @@ class GuardManager {
     return _root;
   }
 
-  bool has_relational_guards();
-
   std::string get_source() {
     return _source;
   }
@@ -2407,7 +2409,7 @@ class GuardManager {
         // to avoid early exits when dict_tag matches and the object is
         // immutable.
         new_tag = get_dict_version_unchecked(value);
-        matches_dict_tag = (new_tag == _dict_tag) && !has_relational_guards();
+        matches_dict_tag = (new_tag == _dict_tag);
       }
     }
 
@@ -2630,10 +2632,6 @@ class RootGuardManager : public GuardManager {
     _relational_guard_resetters.emplace_back(std::move(relational_guard));
   }
 
-  bool has_relational_guards() {
-    return !_relational_guard_resetters.empty();
-  }
-
   // Python visible API to check guard function.
   bool check(py::handle value) {
     return check_nopybind(value.ptr());
@@ -2850,9 +2848,6 @@ class RootGuardManager : public GuardManager {
   bool _init_local_state = false;
 };
 
-bool GuardManager::has_relational_guards() {
-  return _root->has_relational_guards();
-}
 /*
  * Dicts are common in python code. Therefore, we handle guards for dicts
  * differently and use PyDict_* APIs which are faster than PyObject_* APIs
@@ -5060,36 +5055,26 @@ void install_storage_overlapping_guard(
       /* overlapping= */ false);
 }
 
-double profile_guard_manager(RootGuardManager* root, py::object f_locals) {
+double profile_guard_manager(
+    RootGuardManager* root,
+    py::object f_locals,
+    int n_iters) {
   PyObject* locals = f_locals.ptr();
 
   // Warmup
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 5; i++) {
     root->check_nopybind(locals);
   }
 
-  int count = 0;
   auto start = std::chrono::high_resolution_clock::now();
-  float profile_duration = 1.0;
-
-  // Run the loop for profile_duration seconds
-  while (true) {
+  for (int i = 0; i < n_iters; i++) {
     root->check_nopybind(locals);
-    count++;
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end - start;
-
-    // Break the loop if 1 second has passed
-    if (elapsed.count() >= 1.0) {
-      break;
-    }
   }
-
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> total_elapsed = end - start;
 
   // Calculate the average time per iteration in microseconds
-  return (total_elapsed.count() * profile_duration * 1e6) / count;
+  return (total_elapsed.count() * 1e6) / n_iters;
 }
 
 } // namespace
