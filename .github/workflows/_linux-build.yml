@@ -154,7 +154,7 @@ jobs:
       - name: pull s3
         if: inputs.build-environment != 'linux-s390x-binary-manywheel'
         run: |
-          time aws s3 cp s3://${{ inputs.s3-bucket }}/13188224144/${{ inputs.build-environment }}/docker_image.tar.gz .
+          time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13188224144/${{ inputs.build-environment }}/docker_image.tar.gz .
           time gunzip docker_image.tar.gz
           time docker load < docker_image.tar
         shell: bash
