@@ -159,7 +159,7 @@ jobs:
 
       - name: hello
         run: |
-          docker image save -o docker_image.tar ${{ steps.calculate-docker-image.outputs.docker-image }}
+          docker image save ${{ steps.calculate-docker-image.outputs.docker-image }} | gzip > docker_image.tar.gz
         shell: bash
 
       - name: store
@@ -168,7 +168,7 @@ jobs:
           name: ${{ inputs.build-environment }}
           retention-days: 14
           if-no-files-found: error
-          path: docker_image.tar
+          path: docker_image.tar.gz
           s3-bucket: ${{ inputs.s3-bucket }}
 
       # - name: Parse ref
