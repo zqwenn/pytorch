@@ -151,25 +151,33 @@ jobs:
           tag=${ECR_DOCKER_IMAGE##*/}
           echo "docker pull ghcr.io/pytorch/ci-image:${tag/:/-}"
 
-      - name: Pull docker image
-        uses: pytorch/test-infra/.github/actions/pull-docker-image@main
+      - name: pull s3
         if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-        with:
-          docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
-
-      - name: hello
         run: |
-          docker image save ${{ steps.calculate-docker-image.outputs.docker-image }} | gzip > docker_image.tar.gz
+          aws s3 cp s3://${{ inputs.s3-bucket }}/13188224144/${{ inputs.build-environment }}/docker_image.tar.gz .
+          gunzip docker_image.tar.gz
+          docker load < docker_image.tar
         shell: bash
 
-      - name: store
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          name: ${{ inputs.build-environment }}
-          retention-days: 14
-          if-no-files-found: error
-          path: docker_image.tar.gz
-          s3-bucket: ${{ inputs.s3-bucket }}
+      # - name: Pull docker image
+      #   uses: pytorch/test-infra/.github/actions/pull-docker-image@main
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+      #   with:
+      #     docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
+
+      # - name: hello
+      #   run: |
+      #     docker image save ${{ steps.calculate-docker-image.outputs.docker-image }} | gzip > docker_image.tar.gz
+      #   shell: bash
+
+      # - name: store
+      #   uses: seemethere/upload-artifact-s3@v5
+      #   with:
+      #     name: ${{ inputs.build-environment }}
+      #     retention-days: 14
+      #     if-no-files-found: error
+      #     path: docker_image.tar.gz
+      #     s3-bucket: ${{ inputs.s3-bucket }}
 
       # - name: Parse ref
       #   id: parse-ref
