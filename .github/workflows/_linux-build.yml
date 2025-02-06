@@ -151,23 +151,23 @@ jobs:
           tag=${ECR_DOCKER_IMAGE##*/}
           echo "docker pull ghcr.io/pytorch/ci-image:${tag/:/-}"
 
-      # - name: pull s3
-      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-      #   run: |
-      #     time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13188224144/${{ inputs.build-environment }}/docker_image.tar.gz . --no-progress
-      #     time docker load < docker_image.tar.gz
-      #   shell: bash
-
-      - name: Pull docker image
-        uses: pytorch/test-infra/.github/actions/pull-docker-image@main
+      - name: pull s3
         if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-        with:
-          docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
-
-      - name: hello
         run: |
-          docker image save ${{ steps.calculate-docker-image.outputs.docker-image }} | zstd > docker_image.tar.gz
+          time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13188224144/${{ inputs.build-environment }}/docker_image.tar.gz . --no-progress
+          time docker load < docker_image.tar.gz
         shell: bash
+
+      # - name: Pull docker image
+      #   uses: pytorch/test-infra/.github/actions/pull-docker-image@main
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+      #   with:
+      #     docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
+
+      # - name: hello
+      #   run: |
+      #     docker image save ${{ steps.calculate-docker-image.outputs.docker-image }} | zstd > docker_image.tar.gz
+      #   shell: bash
 
       # - name: store
       #   uses: seemethere/upload-artifact-s3@v5
