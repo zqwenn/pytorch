@@ -163,6 +163,7 @@ jobs:
         shell: bash
 
       - name: store
+        uses: seemethere/upload-artifact-s3@v5
         with:
           name: ${{ inputs.build-environment }}
           retention-days: 14
