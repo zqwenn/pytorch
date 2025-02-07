@@ -299,6 +299,7 @@ manual_torch_name_rule_map = {
     "torch._functorch.pyfunctorch.coerce_cinterpreter": TorchInGraphFunctionVariable,
     "torch._higher_order_ops.triton_kernel_wrap.do_prune_configs": UserFunctionVariable,
     "torch._higher_order_ops.foreach_map.foreach_map": UserFunctionVariable,
+    "torch._higher_order_ops.flat_apply.is_graphable": UserFunctionVariable,
     "torch._constrain_as_size": UserFunctionVariable,
     "torch._tensor._convert": UserFunctionVariable,
     "torch.jit._unwrap_optional": UserFunctionVariable,
@@ -2995,6 +2996,12 @@ def _disallowed_callable_ids() -> dict[int, str]:
 
 
 @FunctionIdSet
+def _mark_traceable_callable_ids() -> dict[int, str]:
+    rv: dict[int, str] = {}
+    return rv
+
+
+@FunctionIdSet
 def _builtin_function_ids() -> dict[int, str]:
     # See also torch/_dynamo/polyfills/loader.py, which removes items in _builtin_function_ids
     rv = {
@@ -3097,6 +3104,11 @@ def _maybe_init_lazy_module(obj: object) -> None:
 def is_callable_allowed(obj) -> bool:
     _maybe_init_lazy_module(obj)
     return id(obj) in _allowed_callable_ids
+
+
+def is_mark_traceable_callable(obj) -> bool:
+    _maybe_init_lazy_module(obj)
+    return id(obj) in _mark_traceable_callable_ids
 
 
 def is_callable_disallowed(obj) -> bool:
@@ -3685,12 +3697,25 @@ Main entry point for looking up the trace rule (the Dynamo variable) for a given
 """
 
 
+# TODO hack to fast-workaround the `lookup_callable` return type, e.g., it's
+# used like this in builder.py:
+#    return trace_rules.lookup_callable(value).create_with_source(
+#      value, source=self.source
+#    )
+class _Wrapper:
+    @staticmethod
+    def create_with_source(value, source):
+        return TorchInGraphFunctionVariable(value, traceable=True, source=source)
+
+
 def lookup_callable(obj):
     if not hashable(obj):
         return None
     # Custom allow/disallow in graph takes precedence over the general lookup.
     if is_callable_disallowed(obj):
         return SkipFunctionVariable
+    if is_mark_traceable_callable(obj):
+        return _Wrapper
     if is_callable_allowed(obj):
         return TorchInGraphFunctionVariable
     if is_polyfilled_callable(obj):

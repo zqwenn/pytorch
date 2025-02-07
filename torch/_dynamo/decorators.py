@@ -155,6 +155,20 @@ def allow_in_graph(fn):
     return fn
 
 
+def mark_traceable(fn):
+    """
+    TODO doc
+    1. input constraints
+    2. output constraints
+    3. function semantics constraints
+    """
+    assert callable(fn), "mark_traceable expects a callable"
+    if trace_rules.lookup_callable(fn) != variables.TorchInGraphFunctionVariable:
+        trace_rules._disallowed_callable_ids.remove(id(fn))
+        trace_rules._mark_traceable_callable_ids.add(id(fn))
+    return fn
+
+
 def _disallow_in_graph_helper(throw_if_not_allowed):
     def inner(fn):
         if isinstance(fn, (list, tuple)):
@@ -171,6 +185,7 @@ def _disallow_in_graph_helper(throw_if_not_allowed):
                 "Allowed callables means callables that TorchDynamo puts as-is in the extracted graph."
             )
         trace_rules._allowed_callable_ids.remove(id(fn))
+        trace_rules._mark_traceable_callable_ids.remove(id(fn))
         trace_rules._disallowed_callable_ids.add(id(fn))
         return fn
 

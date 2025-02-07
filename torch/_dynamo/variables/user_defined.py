@@ -1299,6 +1299,31 @@ class FrozenDataClassVariable(UserDefinedObjectVariable):
             fields = {}
         self.fields = fields
 
+    def reconstruct_to_python_object(self):
+        # TODO hack to enable experimenting on mark_traceable (need this to
+        # reconstruct input spec). Maybe the impl is okay if we only need to
+        # reconstruct `TreeSpec` instances...?
+        #
+        # Alternatives:
+        # 1. use `PyCodegen` to generate the bytecode, and invoke the function
+        #    to reconstruct the python objects.
+        # 2. ???
+        return self.as_python_constant()
+
+    def as_python_constant(self):
+        from dataclasses import fields
+
+        args = []
+        kwargs = {}
+        for field in fields(self.value):
+            data = self.fields[field.name].as_python_constant()
+            if field.kw_only:
+                kwargs[field.name] = data
+            elif field.init:
+                args.append(data)
+
+        return self.python_type()(*args, **kwargs)
+
     def as_proxy(self):
         from dataclasses import fields
 

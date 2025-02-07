@@ -32,6 +32,7 @@ from ..utils import (
     guard_if_dyn,
     has_torch_function,
     hashable,
+    istype,
     product,
     proxy_args_kwargs,
     unwrap_if_wrapper,
@@ -42,6 +43,7 @@ from .ctx_manager import (
     ProfilerContextVariable,
     TorchFunctionDisableVariable,
 )
+from .dicts import ConstDictVariable
 from .distributed import DistributedVariable, ProcessGroupVariable
 from .lists import ListVariable, TupleVariable
 from .torch_function import (
@@ -373,8 +375,12 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
 class TorchInGraphFunctionVariable(BaseTorchVariable):
     """Points to a torch function/method that should be put in FX graph"""
 
+    def __init__(self, value, traceable=False, **kwargs) -> None:
+        super().__init__(value, **kwargs)
+        self.traceable = traceable
+
     def __repr__(self) -> str:
-        return f"TorchInGraphFunctionVariable({self.value})"
+        return f"TorchInGraphFunctionVariable({self.value}, traceable={self.traceable})"
 
     def get_function(self):
         return self.value
@@ -1005,6 +1011,82 @@ For now, dynamo will explicitly graph break when it encounters user code with th
                 torch, torch_sym_op
             ):
                 fn_ = getattr(torch, torch_sym_op)
+
+        # -----mark_traceable impl starts-----
+        if self.traceable:
+            import torch._higher_order_ops.flat_apply as flat_apply
+            from torch._higher_order_ops.flat_apply import (
+                func_to_graphable,
+                is_graphable,
+            )
+            from torch.utils._pytree import tree_flatten
+
+            # 1. Pytree the variables to make sure they are proxy-able
+            # Create VT to represent `(args, kwargs)`
+            packed_input_vt = TupleVariable.build(
+                tx, (TupleVariable.build(tx, args), ConstDictVariable.build(tx, kwargs))
+            )
+
+            # Let Dynamo symbolically interpret `tree_flatten((args, kwargs))`
+            out_vt = variables.UserFunctionVariable(tree_flatten).call_function(
+                tx, [packed_input_vt], {}
+            )
+            assert isinstance(out_vt, TupleVariable) and len(out_vt.items) == 2
+            flat_args_vts, in_spec_vt = out_vt.items
+            assert isinstance(flat_args_vts, ListVariable)
+
+            # Handle the case when the input contains a non-graphable type.
+            is_graphable_vt = variables.UserFunctionVariable(is_graphable)
+            for flat_arg_vt in flat_args_vts.items:
+                res_vt = is_graphable_vt.call_function(tx, [flat_arg_vt], {})
+                if not (
+                    istype(res_vt, variables.ConstantVariable) and res_vt.value is True
+                ):
+                    raise AssertionError(
+                        f"""
+Attempting to call a `mark_traceable`-ed function with arguments that contain a
+value of type {flat_arg_vt.python_type()}, please use one of the following to
+register the type with pytree:
+  * `torch.utils._pytree.register_pytree_node`
+  * `torch.utils._pytree.register_constant`
+"""
+                    )
+
+            # 2. Reconstruct args into graphable python objects/proxies.
+            proxified_flat_args = [
+                flat_arg_vt.as_proxy() for flat_arg_vt in flat_args_vts.items
+            ]
+            in_spec = in_spec_vt.reconstruct_to_python_object()
+
+            # `flat_appy` wants a TreeSpec for the function.
+            _, f_spec = func_to_graphable(fn_)
+
+            # Spec isn't graphable, so we register it as an attribute on the
+            # graph module.
+            f_spec_proxy = tx.output.register_static_attr_and_return_proxy(
+                fn_.__name__, f_spec
+            )
+            in_spec_proxy = tx.output.register_static_attr_and_return_proxy(
+                fn_.__name__ + "in_spec", in_spec
+            )
+            all_args = (f_spec_proxy, in_spec_proxy, *proxified_flat_args)
+
+            # 3. create_proxy(..., flat_apply, ...)
+            proxy = tx.output.create_proxy("call_function", flat_apply, all_args, {})
+
+            # 4. faketensor prop and wrap output (wrap_fx_proxy)
+            out_vt = wrap_fx_proxy(tx, proxy)
+
+            # TODO support more output types
+            # Q: flat_apply will likely pytree_flatten the output for this, then
+            # how do we intercept the output before flatten, and wrap those?
+            # - Maybe we can have `flat_apply` return the output spec, so that
+            #   Dynamo can unflatten and wrap the result.
+            #
+            # TODO guards just need to handle the `pytree.mark_constant` objects.
+            # TODO global tensor access
+            # TODO(?) nn module input
+            return out_vt
 
         fake_out_shape = None
         if "out" in kwargs and isinstance(kwargs["out"], variables.TensorVariable):
