@@ -112,6 +112,15 @@ jobs:
         if: inputs.build-environment != 'linux-s390x-binary-manywheel'
         with:
           github-secret: ${{ secrets.GITHUB_TOKEN }}
+      - name: pull s3
+        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+        run: |
+          time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13210221304/${{ inputs.build-environment }}/pytorch.bundle .
+          cd ../
+          rm -rf pytorch
+          git clone pytorch.bundle pytorch
+          git remote set-url origin https://github.com/pytorch/pytorch.git
+        shell: bash
 
       # [pytorch repo ref]
       # Use a pytorch/pytorch reference instead of a reference to the local
@@ -126,14 +135,14 @@ jobs:
         run: |
           git bundle create pytorch.bundle --all
 
-      - name: store
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          name: ${{ inputs.build-environment }}
-          retention-days: 14
-          if-no-files-found: error
-          path: pytorch.bundle
-          s3-bucket: ${{ inputs.s3-bucket }}
+      # - name: store
+      #   uses: seemethere/upload-artifact-s3@v5
+      #   with:
+      #     name: ${{ inputs.build-environment }}
+      #     retention-days: 14
+      #     if-no-files-found: error
+      #     path: pytorch.bundle
+      #     s3-bucket: ${{ inputs.s3-bucket }}
 
       # - name: Setup Linux
       #   uses: ./.github/actions/setup-linux
