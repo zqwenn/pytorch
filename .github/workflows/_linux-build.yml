@@ -121,7 +121,7 @@ jobs:
           rm -rf pytorch
           git clone pytorch.bundle pytorch
           cd pytorch
-          git remote set-url origin https://github.com/pytorch/pytorch.git
+          git remote set-url origin https://github.com/pytorch/pytorch
         shell: bash
 
       # [pytorch repo ref]
