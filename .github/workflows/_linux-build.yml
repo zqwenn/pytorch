@@ -115,7 +115,7 @@ jobs:
       - name: pull s3
         if: inputs.build-environment != 'linux-s390x-binary-manywheel'
         run: |
-          time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13210221304/${{ inputs.build-environment }}/pytorch.bundle .
+          time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13210221304/${{ inputs.build-environment }}/pytorch.bundle . --no-progress
           cd ../
           rm -rf pytorch
           git clone pytorch.bundle pytorch
