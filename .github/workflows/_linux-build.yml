@@ -122,41 +122,54 @@ jobs:
         with:
           no-sudo: true
 
-      - name: Setup Linux
-        uses: ./.github/actions/setup-linux
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v3
-        if: ${{ inputs.aws-role-to-assume != '' && inputs.build-environment != 'linux-s390x-binary-manywheel' }}
-        with:
-          role-to-assume: ${{ inputs.aws-role-to-assume }}
-          role-session-name: gha-linux-build
-          aws-region: us-east-1
-
-      - name: Calculate docker image
-        id: calculate-docker-image
-        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-        with:
-          docker-image-name: ${{ inputs.docker-image-name }}
-
-      - name: Use following to pull public copy of the image
-        id: print-ghcr-mirror
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-        env:
-          ECR_DOCKER_IMAGE: ${{ steps.calculate-docker-image.outputs.docker-image }}
-        shell: bash
+      - name: git bundle
         run: |
-          tag=${ECR_DOCKER_IMAGE##*/}
-          echo "docker pull ghcr.io/pytorch/ci-image:${tag/:/-}"
+          git bundle create pytorch.bundle --all
 
-      - name: pull s3
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-        run: |
-          time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13188224144/${{ inputs.build-environment }}/docker_image.tar.gz . --no-progress
-          time docker load < docker_image.tar.gz
-        shell: bash
+      - name: store
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          name: ${{ inputs.build-environment }}
+          retention-days: 14
+          if-no-files-found: error
+          path: pytorch.bundle
+          s3-bucket: ${{ inputs.s3-bucket }}
+
+      # - name: Setup Linux
+      #   uses: ./.github/actions/setup-linux
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+
+      # - name: configure aws credentials
+      #   uses: aws-actions/configure-aws-credentials@v3
+      #   if: ${{ inputs.aws-role-to-assume != '' && inputs.build-environment != 'linux-s390x-binary-manywheel' }}
+      #   with:
+      #     role-to-assume: ${{ inputs.aws-role-to-assume }}
+      #     role-session-name: gha-linux-build
+      #     aws-region: us-east-1
+
+      # - name: Calculate docker image
+      #   id: calculate-docker-image
+      #   uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+      #   with:
+      #     docker-image-name: ${{ inputs.docker-image-name }}
+
+      # - name: Use following to pull public copy of the image
+      #   id: print-ghcr-mirror
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+      #   env:
+      #     ECR_DOCKER_IMAGE: ${{ steps.calculate-docker-image.outputs.docker-image }}
+      #   shell: bash
+      #   run: |
+      #     tag=${ECR_DOCKER_IMAGE##*/}
+      #     echo "docker pull ghcr.io/pytorch/ci-image:${tag/:/-}"
+
+      # - name: pull s3
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+      #   run: |
+      #     time aws s3 cp s3://${{ inputs.s3-bucket }}/pytorch/pytorch/13188224144/${{ inputs.build-environment }}/docker_image.tar.gz . --no-progress
+      #     time docker load < docker_image.tar.gz
+      #   shell: bash
 
       # - name: Pull docker image
       #   uses: pytorch/test-infra/.github/actions/pull-docker-image@main
