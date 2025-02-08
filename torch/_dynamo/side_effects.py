@@ -1,4 +1,23 @@
 # mypy: allow-untyped-defs
+
+"""
+This module handles tracking and applying side effects during PyTorch Dynamo compilation.
+It maintains Python semantics by carefully managing mutations, attribute modifications,
+and other side effects that occur during program execution.
+
+Key responsibilities:
+- Tracks mutations to Python objects, lists, and dictionaries
+- Manages attribute modifications and deletions
+- Handles tensor hooks and backward pass state
+- Supports cell variable mutations and global variable changes
+- Ensures correct ordering and application of side effects after graph execution
+
+The SideEffects class is the central component, maintaining records of mutations
+and providing methods to apply them during code generation. This ensures that
+optimized code behaves identically to the original Python code with respect to
+object mutations and other side effects.
+"""
+
 import collections
 import contextlib
 import functools

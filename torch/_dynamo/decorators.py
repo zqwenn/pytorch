@@ -1,5 +1,30 @@
 # mypy: allow-untyped-defs
 # ruff: noqa: TCH004
+
+"""
+This module provides decorators and utilities for controlling TorchDynamo's behavior during compilation.
+
+Key functionality includes:
+- Function marking decorators (disable, skip, allow_in_graph, disallow_in_graph)
+- Tensor dimension handling (mark_dynamic, mark_static, mark_unbacked)
+- Graph compilation control (run, graph_break)
+- Module attribute handling (mark_static for nn.Module)
+
+The decorators and utilities in this module are thread-safe and can be used to:
+- Control which functions are included/excluded from graph compilation
+- Specify tensor dimension properties for optimization
+- Configure compilation behavior for specific functions
+- Mark tensors and modules as static/dynamic for better performance
+
+Important decorators:
+- disable: Prevents TorchDynamo from operating on a function
+- allow_in_graph: Permits direct function inclusion in compiled graphs
+- mark_dynamic: Specifies dynamic tensor dimensions
+- mark_static: Marks tensor dimensions or nn.Modules as static
+
+Note: Most marking functions should be called before compilation, not during tracing.
+"""
+
 import functools
 import inspect
 import sys
