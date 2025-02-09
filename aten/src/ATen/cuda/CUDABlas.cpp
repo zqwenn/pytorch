@@ -13,6 +13,8 @@
 #include <c10/macros/Export.h>
 #include <c10/util/env.h>
 #include <c10/util/irange.h>
+#include <c10/core/Allocator.h>
+#include <c10/core/ScalarType.h>
 
 #ifdef USE_ROCM
 #include <hipblaslt/hipblaslt-ext.hpp>
@@ -1422,10 +1424,12 @@ void scaled_gemm(
     const void* mat1_scale_ptr,
     int64_t mat1_ld,
     ScalarType mat1_dtype,
+    ScalarType mat1_scale_dtype,
     const void* mat2_ptr,
     const void* mat2_scale_ptr,
     int64_t mat2_ld,
     ScalarType mat2_dtype,
+    ScalarType mat2_scale_dtype,
     const void* bias_ptr,
     ScalarType bias_dtype,
     void* result_ptr,
@@ -1478,6 +1482,16 @@ void scaled_gemm(
     computeDesc.setAttribute(CUBLASLT_MATMUL_DESC_EPILOGUE, CUBLASLT_EPILOGUE_BIAS);
     computeDesc.setAttribute(CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE, ScalarTypeToCudaDataType(bias_dtype));
   }
+
+  if (mat1_scale_dtype == kFloat8_e8m0fnu && mat2_scale_dtype == kFloat8_e8m0fnu) {
+#if CUDA_VERSION >= 12000
+    computeDesc.setAttribute(CUBLASLT_MATMUL_DESC_A_SCALE_MODE, CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0);
+    computeDesc.setAttribute(CUBLASLT_MATMUL_DESC_B_SCALE_MODE, CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0);
+#else
+    TORCH_CHECK(false, "scaled_gemm with `torch.float8_e8m0fnu` scales is only supported for CUDA 12.0 and above");
+#endif // CUDA_VERSION >= 12000
+  }
+
   size_t workspaceSize = _getWorkspaceSize();
   auto workspace = at::empty(static_cast<int64_t>(workspaceSize), at::TensorOptions().dtype(at::kByte).device(at::kCUDA));
 
